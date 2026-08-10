@@ -1,0 +1,4 @@
+interface:
+  display_name: "Email"
+  short_description: "Read, search, and send Google mail with gog"
+  default_prompt: "Use $email to read, search, or send the operator's Google mail."

@@ -28,6 +28,12 @@ copy it once produced (banner-matched, so other tools' skills are untouched).
 whether a human answers mid-run. Keep that fork honest: shared meaning
 belongs in a fragment, not copied into both templates.
 
+A tool-specific runbook normally lives with its tool, but `notify` and
+`email` wrap `terminal-notifier` and `gog` — third-party binaries with no
+fleet repo to live in, so they live here. That is the whole exception; a
+runbook for a fleet tool still belongs in that tool's checkout. `email` is
+deliberately unadvertised and reached through its own description alone.
+
 `AGENTS.md` is the canonical guidance file; `CLAUDE.md` is a symlink to it.
 Run `tests/validate.sh` before committing.
 
