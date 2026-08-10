@@ -17,10 +17,10 @@ repo carries only the doctrine that applies everywhere.
 
 ## Install
 
-Agentdots owns installation. Its skills scan ships `skills/<name>/` whole, then
+AgentStart owns installation. Its skills scan ships `skills/<name>/` whole, then
 runs `scripts/post-sync` — the render — so the installed copies arrive already
 composed with the operator's extension prompts. Nothing here is installed by
-hand. A machine without the Agentdots seam can still render directly:
+hand. A machine without the AgentStart seam can still render directly:
 
 ```sh
 scripts/render   # templates + fragments + ~/.config/agentguidance → ~/.agents/skills
@@ -38,7 +38,7 @@ scripts/render   # templates + fragments + ~/.config/agentguidance → ~/.agents
 - `tests/validate.sh` — the gate; run it before committing.
 
 The extension prompts themselves are not here: they are the operator's,
-kept in Agentdots (`prompts/agentguidance/`) and linked into
+kept in AgentStart (`prompts/agentguidance/`) and linked into
 `~/.config/agentguidance/`. That split is the point — these templates are
 public doctrine, the extensions are one machine's voice, and the render is
 where they meet.

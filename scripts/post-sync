@@ -1,5 +1,5 @@
 #!/bin/bash
-# The fleet's post-sync hook: Agentdots' sync-skills runs this after shipping
+# The fleet's post-sync hook: AgentStart's sync-skills runs this after shipping
 # the skills/ templates, so the installed copies are immediately re-rendered
 # against the operator extension prompts. Rendering is the whole job.
 set -euo pipefail

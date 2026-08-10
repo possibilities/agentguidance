@@ -12,10 +12,10 @@ Two kinds of render point, spliced by `scripts/render`:
   classification, the sketch contract, build norms, and the domain-model
   discipline) cannot drift apart. A missing fragment fails the render.
 - `<!-- extension-prompt: NAME.md -->` — operator-owned machine voice from
-  `~/.config/agentguidance/` (linked there by Agentdots from its
+  `~/.config/agentguidance/` (linked there by AgentStart from its
   `prompts/agentguidance/`). An absent file renders to nothing.
 
-This checkout is an ordinary agent* scan participant: Agentdots' sync-skills
+This checkout is an ordinary agent* scan participant: AgentStart's sync-skills
 ships `skills/<name>/` whole, then runs `scripts/post-sync` — the render —
 so the raw templates it just shipped are immediately replaced by rendered
 artifacts. That hook is why the templates may live in `skills/` at all;
@@ -42,13 +42,13 @@ Run `tests/validate.sh` before committing.
 This checkout is one of the agent* fleet under `~/code`. Shared machinery
 lives in two siblings, and some changes here must cascade:
 
-- Skills under `skills/<name>/` ship globally through Agentdots' scan
-  (`~/code/agentdots/scripts/sync-skills`, run six-hourly by Funk's
+- Skills under `skills/<name>/` ship globally through AgentStart's scan
+  (`~/code/agentstart/scripts/sync-skills`, run six-hourly by Funk's
   updater): a SKILL.md edit is live within six hours, or on demand by
   running that script. Whether a new skill earns a TOOLS.md advertisement
   line is a deliberate decision — `agentwiki get tool-advertisement-policy`.
 - Adding or removing a call to another fleet tool changes the fleet map:
-  update `~/code/agentdots/skills/fleet/MAP.md` (served by the `fleet`
+  update `~/code/agentstart/skills/fleet/MAP.md` (served by the `fleet`
   skill, every edge with evidence) in the same change.
 - General agent doctrine — collab, build, story, the resource skills — is
   `~/code/agentguidance`; tool-specific runbooks stay here.
