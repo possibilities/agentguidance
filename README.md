@@ -1,5 +1,7 @@
 # Agentguidance
 
+[![CI](https://github.com/possibilities/agentguidance/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentguidance/actions/workflows/ci.yml)
+
 The general agent-guidance skills — `collab`, `build`, `resource-create`,
 `resource-update`, `story` — and the composition system that renders them:
 shared doctrine in `fragments/`, operator voice spliced from
