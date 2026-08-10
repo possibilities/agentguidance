@@ -31,20 +31,24 @@ rewrite with opinions.
 
 ## Storage: the source/render pair, kept honest
 
-At render time, snapshot the story body as it was rendered and publish the
-pair per cli.md § Artifact-phase publishing: the snapshot under
-`--kind evidence`, the HTML under `--kind render`. Both are content-addressed,
-so each `/a/<name>/v/<hash>/` URL keeps naming exactly the bytes it was
-published from even after the story document moves on. Cite the version URL,
-never the latest pointer.
+At render time, snapshot the story body exactly as it was rendered, and
+publish that snapshot alongside the HTML through whatever publisher the
+session has. The pair is the point: the render stays checkable against the
+bytes it came from, even after the story document moves on. Publish both as
+immutable versions and cite the URL naming those exact bytes, never a pointer
+that tracks latest. Where the wiki vault is the publisher, the invocations are
+in cli.md § Artifact-phase publishing.
+
+A publisher that cannot pair, cannot version immutably, or offers no citable
+URL still delivers the render — say which of those you got, rather than
+implying a guarantee it does not make.
 
 ## The serving caveat
 
-State it plainly when delivering: `agentwiki serve` sends
-`Content-Security-Policy: sandbox allow-scripts`, so the render does run from
-there, but in a unique opaque origin — no cookies, no `localStorage`, no
-same-origin fetch. A render that needs any of those is interactive only when
-opened as a file, or when published through a harness that can publish pages
-(for example the Claude Artifact tool, when present — offer that only when
-the tool actually exists in the session). Where no publishing tool exists,
-the file is the deliverable, full stop.
+Say plainly how the render is served. A publisher will usually sandbox it into
+an opaque origin — no cookies, no `localStorage`, no same-origin fetch — and
+the format rules above already keep a render inside those limits, which is why
+one build serves every backend. A render that genuinely needs more is a gap to
+fix in the publisher, not a reason to route this story through a different
+one. Where nothing in the session can publish, the file itself is the
+deliverable, full stop.
