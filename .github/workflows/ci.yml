@@ -26,4 +26,4 @@ jobs:
           bun-version: latest
 
       - name: Validate
-        run: tests/validate.sh
+        run: env -u XDG_CONFIG_HOME tests/validate.sh
