@@ -1,0 +1,6 @@
+interface:
+  display_name: "Resource Create"
+  short_description: "Gather research into a durable resource directory"
+  default_prompt: "Use $resource-create with this material."
+policy:
+  allow_implicit_invocation: false

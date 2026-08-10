@@ -1,0 +1,6 @@
+interface:
+  display_name: "Resource Update"
+  short_description: "Resume and refresh an existing resource directory"
+  default_prompt: "Use $resource-update with this resource."
+policy:
+  allow_implicit_invocation: false

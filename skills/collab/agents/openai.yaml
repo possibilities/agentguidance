@@ -1,0 +1,6 @@
+interface:
+  display_name: "Collab"
+  short_description: "Route any task to the right kind of response"
+  default_prompt: "Use $collab with this task."
+policy:
+  allow_implicit_invocation: true
