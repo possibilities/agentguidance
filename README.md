@@ -1,4 +1,4 @@
-# Agentguidance
+# AgentGuidance
 
 [![CI](https://github.com/possibilities/agentguidance/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentguidance/actions/workflows/ci.yml)
 
