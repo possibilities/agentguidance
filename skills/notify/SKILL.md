@@ -45,6 +45,5 @@ lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchSe
 "$lsregister" -f "$(brew --prefix)/opt/terminal-notifier/terminal-notifier.app"
 ```
 
-`funk-notify` does this before every post and swallows a missing notifier
-rather than failing its caller. Read it, or route through it, if
-notifications keep going missing.
+Re-register before a post, rather than only after noticing silence, if
+notifications keep going missing on this machine.
