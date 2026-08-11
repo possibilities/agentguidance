@@ -63,6 +63,12 @@ memory, another session) and leave those to their owner. Then wait for
 plain-text approval to start watching; the survey alone is a complete,
 useful answer.
 
+A request whose upstream has been archived can never move again: it
+cannot be merged, and the API refuses to close it. Report it once as
+inert and keep it out of the watch — polling it is the one silence that
+is guaranteed to mean nothing, and a survey that keeps re-listing it as
+open teaches the reader to distrust the rest of the list.
+
 ## The watch
 
 Poll through the harness's scheduling facility — never a busy loop.
@@ -92,7 +98,17 @@ that map to none of them.
 - A CI rollup mid-run reads pending or partial. Let the run settle
   before calling it a failure.
 - The head sha and comment count move for non-events — a rebase we asked
-  for, an automated reviewer editing its summary in place.
+  for, an automated reviewer editing its summary in place. Most often of
+  all, they move for our own activity: a comment count that counts our
+  replies fires the watch on the sound of its own voice. Count only what
+  someone other than us wrote.
+
+The first comparison needs a baseline, and a guessed one is a false alarm
+already loaded. Seed it by running one throwaway poll that records the
+real state, then poll again and confirm the second is silent — only then
+arm the watch. A watch that fires on its first tick is reporting that its
+baseline was wrong, not that anything happened, and it costs nothing to
+learn that before the watch is armed rather than after.
 
 Confirm before reporting: re-read the request and name the event in this
 skill's vocabulary. If the second read cannot name one, there was no
