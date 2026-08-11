@@ -43,7 +43,12 @@ Find the requests rather than asking for them:
   a remote owned by someone else is the upstream directly, and a remote
   that is our fork points at its parent
   (`gh api repos/{owner}/{repo} --jq .parent.full_name`). Dedupe across
-  checkouts.
+  checkouts, and drop any upstream that is archived — `.archived` on the
+  same response — at resolution rather than filtering its requests
+  later. An archived repository can never merge or close anything, so a
+  request against one is unactionable rather than pending; excluding it
+  where the set is built keeps every stage downstream free of a special
+  case for it.
 - List the open requests we authored against each upstream:
   `gh pr list --repo UPSTREAM --author @me --state open`. A global
   `gh search prs --author @me --state open` is a useful cross-check for
@@ -62,12 +67,6 @@ request already covered by a dedicated watch elsewhere (a standing
 memory, another session) and leave those to their owner. Then wait for
 plain-text approval to start watching; the survey alone is a complete,
 useful answer.
-
-A request whose upstream has been archived can never move again: it
-cannot be merged, and the API refuses to close it. Report it once as
-inert and keep it out of the watch — polling it is the one silence that
-is guaranteed to mean nothing, and a survey that keeps re-listing it as
-open teaches the reader to distrust the rest of the list.
 
 ## The watch
 
@@ -142,12 +141,18 @@ the checkouts in scope, resolve each upstream, list our open requests
 against each with `gh pr list --repo UPSTREAM --author @me --state open`,
 and diff that set against the watched set.
 
-Cadence is slower than the status poll — a request that has existed for
-ten minutes has lost nothing by being found on the hour. Resolving
-upstreams is the expensive half of the walk, so cache the resolved set
-in the state directory and re-resolve it only when a checkout appears or
-disappears; the cheap half, listing our requests per upstream, is what
-runs every time.
+Sweep on the same cadence as the status poll. A request found ten
+minutes after it was opened is still found before anyone has answered
+it, and a slower sweep only widens the window where a live request is
+invisible to the watch. Resolving upstreams is the expensive half of the
+walk, so cache the resolved set in the scratchpad and re-resolve it only
+when a checkout appears or disappears; the cheap half, listing our
+requests per upstream, is what runs every sweep.
+
+A sweep that could not reach an upstream has missing data, not an empty
+one. Diffing a partial sweep against the watched set reports every
+request on the unreachable upstream as merged or closed — so let the
+sweep fail whole and try again rather than act on half of it.
 
 Two differences come out of it, and both are events:
 
@@ -160,9 +165,12 @@ Two differences come out of it, and both are events:
   watch was not looking. Treat it as the merge-or-close event it is,
   aftermath and all, then prune its file from the state directory.
 
-A request against an archived upstream is the exception noted above: it
-will show up in every sweep forever and must be recorded as inert once,
-not re-reported each time.
+The sweep inherits the survey's scope and needs no exceptions bolted on
+to it. Walking checkouts that exist and upstreams that are somebody
+else's is what keeps the set small and every member of it actionable;
+a request we cannot reach from a local checkout is not the watch's to
+carry, and reaching for the global search to find one is how requests
+nobody can act on end up in the report.
 
 ## Hand the work back
 
@@ -234,13 +242,23 @@ never in a session-scoped temporary directory, which loses the baseline
 the moment the session ends and leaves the next one unable to tell drift
 from a cold start.
 
-What belongs there: one file per watched request, named for its upstream
-and number, holding the last known state in this skill's event
-vocabulary rather than raw API fields; the poller itself, so a later
-session can read what the watch is actually comparing; and any cursor a
-gate depends on, such as the published version a release-gated aftermath
-is waiting on. What does not: secrets of any kind, and handoff prose,
-which belongs in the transcript where the human can act on it.
+It is a scratchpad and holds only state: one file per watched request,
+named for its upstream and number, carrying the last known state in this
+skill's event vocabulary rather than raw API fields; the watched set
+itself; the cached upstream resolution; and any cursor a gate depends
+on, such as the published version a release-gated aftermath waits for.
+What does not belong there: secrets of any kind; handoff prose, which
+belongs in the transcript where the human can act on it; and the pollers
+themselves, which ship with this skill under `scripts/`.
+
+That split is what keeps the pollers reusable. A watched set written
+into the script is machine state masquerading as code — it goes stale
+the moment a request is opened, and it makes the script unshippable.
+`scripts/resurvey.sh` maintains the set in the scratchpad and
+`scripts/poll.sh` reads it, so a request found by a sweep is watched by
+the next poll without either script being edited. Run them with
+`bash <path>`; both take no arguments, and both accept
+`WATCH_REQUESTS_INTERVAL` for cadence.
 
 The state directory holds only what is mechanical and regenerable.
 Two other homes take what it cannot, and reaching for them is a
