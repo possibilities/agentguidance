@@ -5,6 +5,11 @@ Skill directories under `skills/` are templates. The installed copies under
 any skill template, a fragment in `fragments/`, or an extension prompt in
 `~/.config/agentguidance/`, run `scripts/render` to rebuild them.
 
+The render installs every file read-only, so a script a skill ships is never
+executable where it lands. Run one as `bash <path>`, and say so in the skill
+that ships it; an execute bit in the template is a promise the install does
+not keep.
+
 Two kinds of render point, spliced by `scripts/render`:
 
 - `<!-- fragment: NAME.md -->` — repo-owned shared doctrine from

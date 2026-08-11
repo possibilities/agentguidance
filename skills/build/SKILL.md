@@ -35,6 +35,8 @@ stated default and record it as an assumption.
 
 <!-- fragment: build-well.md -->
 
+<!-- fragment: wait-well.md -->
+
 ## Stop only to explain
 
 Stopping is the escape hatch, not a question. Stop when the work is genuinely
