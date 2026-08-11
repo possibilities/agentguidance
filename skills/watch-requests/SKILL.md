@@ -131,6 +131,39 @@ event, and the correct output is silence.
 - **Anything else** — a situation these rules do not cover means
   notifying the human, not improvising.
 
+## The survey is not a one-time act
+
+A watch that only ever polls the requests it was armed with goes stale
+the moment another one is opened — and the session that opens it is
+rarely the session doing the watching. So the survey runs on a schedule
+of its own, mechanically, through the same scheduling facility as the
+status poll and from the same checkout walk that produced it: enumerate
+the checkouts in scope, resolve each upstream, list our open requests
+against each with `gh pr list --repo UPSTREAM --author @me --state open`,
+and diff that set against the watched set.
+
+Cadence is slower than the status poll — a request that has existed for
+ten minutes has lost nothing by being found on the hour. Resolving
+upstreams is the expensive half of the walk, so cache the resolved set
+in the state directory and re-resolve it only when a checkout appears or
+disappears; the cheap half, listing our requests per upstream, is what
+runs every time.
+
+Two differences come out of it, and both are events:
+
+- **A request the watch has never seen** — report it in the survey's
+  one-line shape, seed its baseline by the calibration above, and fold
+  it into the watch. It arrives mid-flight and may already carry a
+  review or a red run, so read its current state rather than assuming a
+  new request is a quiet one.
+- **A request that has left the open set** — merged or closed while the
+  watch was not looking. Treat it as the merge-or-close event it is,
+  aftermath and all, then prune its file from the state directory.
+
+A request against an archived upstream is the exception noted above: it
+will show up in every sweep forever and must be recorded as inert once,
+not re-reported each time.
+
 ## Hand the work back
 
 Work on a request belongs to the session that opened it — that session
