@@ -68,7 +68,8 @@ useful answer.
 Poll through the harness's scheduling facility — never a busy loop.
 Match the cadence to the activity: an active review conversation is
 worth checking every few minutes; a maintainer silent for weeks is a
-daily glance. Silence is the steady state and is not reportable.
+daily glance. Silence is the steady state and is not reportable — and
+most of what a poll turns up is silence wearing a different hat.
 
 Judge maintainer activity from the repository, not from our request. A
 maintainer who has not replied to us in three weeks while merging other
