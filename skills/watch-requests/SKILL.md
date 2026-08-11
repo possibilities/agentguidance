@@ -55,10 +55,13 @@ Find the requests rather than asking for them:
 
 Before watching anything, present the survey: one line per request —
 repository, number, title, CI state, review state, mergeability, and
-when a maintainer last touched it. Note any request already covered by
-a dedicated watch elsewhere (a standing memory, another session) and
-leave those to their owner. Then wait for plain-text approval to start
-watching; the survey alone is a complete, useful answer.
+when a maintainer last touched it — read against how active the
+repository itself is, never on its own, because the same silence means
+different things from an absent maintainer and a busy one. Note any
+request already covered by a dedicated watch elsewhere (a standing
+memory, another session) and leave those to their owner. Then wait for
+plain-text approval to start watching; the survey alone is a complete,
+useful answer.
 
 ## The watch
 
@@ -67,9 +70,32 @@ Match the cadence to the activity: an active review conversation is
 worth checking every few minutes; a maintainer silent for weeks is a
 daily glance. Silence is the steady state and is not reportable.
 
+Judge maintainer activity from the repository, not from our request. A
+maintainer who has not replied to us in three weeks while merging other
+PRs daily is passing us over, not absent — a different situation, with a
+nudge as a live option. Report the two differently.
+
 Each poll compares against the last known state and acts by event. The
 watch is a watch: it diagnoses, it does not author. Anything that would
 change the branch is handed back (below) rather than done here.
+
+A difference is not an event. The list below is the whole set of things
+worth reporting; a poll that diffs raw API fields will fire on changes
+that map to none of them.
+
+- `mergeable` returns `UNKNOWN` whenever the base branch moves, until
+  the merge commit is recomputed. Treat `UNKNOWN` as missing data, never
+  as a state: re-read after a pause, carry the last verdict forward if
+  still unresolved, and trust `mergeStateStatus` (`CLEAN`, `BEHIND`,
+  `DIRTY`) over it.
+- A CI rollup mid-run reads pending or partial. Let the run settle
+  before calling it a failure.
+- The head sha and comment count move for non-events — a rebase we asked
+  for, an automated reviewer editing its summary in place.
+
+Confirm before reporting: re-read the request and name the event in this
+skill's vocabulary. If the second read cannot name one, there was no
+event, and the correct output is silence.
 
 - **CI failing** — read the failure and pull out the diagnosis: the job,
   the failing step, the log excerpt that names the cause. A failure that
