@@ -1,6 +1,6 @@
 ---
 name: watch-requests
-description: Survey the open pull requests we have sent to upstream repositories — inferred from this machine's checkouts, never a kept list — then, on approval, run a standing watch that keeps each one moving; routing failing CI, reviews, and stale branches back to the session that opened the request, and carrying out the recorded follow-up when one lands. Use when asked to check on our PRs, watch or babysit upstream contributions, to recheck what is out there, or when a sent pull request needs tending until merge.
+description: Survey the open pull requests we have sent to upstream repositories — inferred from this machine's checkouts, never a kept list — then, on approval, run a standing watch that keeps each one moving; routing failing CI, reviews, and stale branches back to the session that opened the request, and routing a merge's aftermath to the repository that owns the wiring. Use when asked to check on our PRs, watch or babysit upstream contributions, to recheck what is out there, or when a sent pull request needs tending until merge.
 ---
 
 # Watch requests
@@ -9,7 +9,9 @@ A pull request sent to someone else's repository stalls without tending:
 CI breaks against a moved base, reviewers ask for changes, the branch
 falls behind. This skill is the standing watch — first a survey of what
 is out there, then, with approval, a loop that keeps every open request
-moving and knows what to do when one lands.
+moving and knows what to do when one lands. The watch watches: every
+piece of work it finds leaves as a prompt for the session or repository
+that owns it, never as a commit of its own.
 
 ## Scope
 
@@ -117,12 +119,34 @@ find it and aim it, never to fix the branch itself and never to push.
   automated reviewer usually needs none; then push and watch the run to
   green rather than stopping at the push.
 - **Reach the human** through the notify skill with the outcome in one
-  line, then put the resume command and the steering prompt in the
-  transcript for them.
-- **When no origin session can be found**, say so plainly and hand over
-  the steering prompt anyway, naming the repository and worktree the
-  branch lives in. A missing session log makes the handoff colder, not
-  optional.
+  line, then put the delivery and the prompt in the transcript for them
+  (below).
+- **When no origin session can be found**, say so plainly and hand the
+  prompt over as fresh-agent work in the worktree the branch lives in,
+  naming the repository and the branch. A missing session log makes the
+  handoff colder, not optional.
+
+## The shape of a handoff
+
+Everything the watch produces is a prompt for someone else to run, and
+each one arrives with its delivery attached. The watch never executes
+the work, in this repository or any other.
+
+Two deliveries, and a handoff may carry both:
+
+- **Resume an existing session** — the right delivery when the work
+  continues something a session already holds: the branch, the
+  reasoning, the review conversation. Give the exact command from
+  `cass resume <source_path> --shell`, then the prompt to paste into it.
+- **Start a new agent in a directory** — the right delivery when the
+  work belongs to a repository rather than to a conversation. Give the
+  working directory plainly, then a prompt written for someone with no
+  history at all: what happened, what to do, how to verify it, and every
+  fact it would otherwise have to reconstruct.
+
+When several prompts come out of one poll, present them as a set — one
+per piece of work, each labelled with its delivery — rather than a
+paragraph the human has to disentangle.
 
 ## Rechecking on demand
 
@@ -145,13 +169,33 @@ one-line-per-request shape.
 
 ## After a merge
 
-A merged request sometimes has consequences on this machine — the
-classic case is a fork carried only for the patch, which collapses back
-to a plain upstream install once the patch lands. Check the machine's
-records — memory, the wiki, the affected repository's own guidance —
-for a recorded follow-up process. When one is recorded, do the work and
-report it. When none is, say the request landed and stop; never invent
-cleanup.
+A merged request usually has consequences on this machine, and they
+rarely land in the repository the patch was written against. A fork
+carried only for the patch collapses back to a plain upstream install; a
+pinned version moves once the fix ships in a release; an installer stops
+provisioning something. That work belongs to whichever repository owns
+the wiring — often the one that administers the machine's toolchain,
+sometimes the fleet repo whose installer does the provisioning — and the
+watch hands it over exactly like everything else.
+
+- **Find the recorded follow-up.** Check the machine's records — memory,
+  the wiki, the owning repository's own guidance — for the process. When
+  none is recorded, say the request landed and stop; never invent
+  cleanup.
+- **Find the owner.** The repository whose installer, pin, or guidance
+  encodes the thing that must change. That is the working directory the
+  aftermath prompt is aimed at, and it is usually not where the patch
+  was written.
+- **Write it as fresh-agent work in that directory**, not as a resume:
+  the aftermath is a new job in another repository, and the session that
+  wrote the patch has nothing useful to contribute to it. The prompt
+  carries which request merged and where, the release or version that
+  now carries the fix when there is one, the recorded procedure quoted
+  or cited by page, the files known to encode the old arrangement, and
+  the check that proves it converged — the repository's own validation
+  command, and a rerun of its installer where that is how it converges.
+- **Notify and hand over** the directory and the prompt, alongside the
+  merge itself.
 
 ## Reaching the human
 
