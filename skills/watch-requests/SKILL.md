@@ -107,6 +107,15 @@ find it and aim it, never to fix the branch itself and never to push.
   what happened in the words of the event — the failing job and log
   excerpt, or the reviewer's request quoted — what needs to happen, and
   where it lands when done.
+- **Put the working standard in the prompt**, because the resumed
+  session is the one doing the work and the watch is not there to
+  supervise it. State, in the prompt itself: rebase onto the current
+  base first when the branch is stale; reproduce the failure locally
+  when the logs alone do not explain it; adversarially self-review the
+  change before pushing when the change merits it; answer the feedback
+  in the commits and, where prose is owed, a reply comment — an
+  automated reviewer usually needs none; then push and watch the run to
+  green rather than stopping at the push.
 - **Reach the human** through the notify skill with the outcome in one
   line, then put the resume command and the steering prompt in the
   transcript for them.
