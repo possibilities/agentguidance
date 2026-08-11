@@ -192,6 +192,54 @@ When several prompts come out of one poll, present them as a set — one
 per piece of work, each labelled with its delivery — rather than a
 paragraph the human has to disentangle.
 
+## Remembering across invocations
+
+A watch outlives the session that armed it, and the session scratchpad
+does not. Anything the watch must still know tomorrow lives in
+`${XDG_STATE_HOME:-~/.local/state}/watch-requests/`, created on demand —
+never in a session-scoped temporary directory, which loses the baseline
+the moment the session ends and leaves the next one unable to tell drift
+from a cold start.
+
+What belongs there: one file per watched request, named for its upstream
+and number, holding the last known state in this skill's event
+vocabulary rather than raw API fields; the poller itself, so a later
+session can read what the watch is actually comparing; and any cursor a
+gate depends on, such as the published version a release-gated aftermath
+is waiting on. What does not: secrets of any kind, and handoff prose,
+which belongs in the transcript where the human can act on it.
+
+The state directory holds only what is mechanical and regenerable.
+Two other homes take what it cannot, and reaching for them is a
+judgement call, not ceremony — write only what a later session would
+otherwise have to reconstruct or would get wrong.
+
+- **Memory** holds the arrangement: that a watch exists at all, the
+  scope it was armed at, the escalation the operator asked for, which
+  requests another session already owns, and any obligation this watch
+  took on — a ping owed elsewhere when a merge lands is a promise, and a
+  promise no one recorded is a promise broken by the next context
+  window. None of this is derivable from the API, and all of it decides
+  what the next session does before it polls anything.
+- **The wiki** holds what outlives the machine and belongs to no single
+  repository: how a fork is wired and what condition retires it, why a
+  patch was carried, a standing decision about an upstream. Point at the
+  page from wherever it constrains, so the aftermath can cite the
+  recorded procedure instead of improvising one.
+
+Keep each fact in one of the three and link rather than copy. The same
+fact in two homes drifts, and a watch that believes a stale copy is
+worse than one that had to go and look.
+
+Treat the directory as a cache and never as the source of truth. The
+checkouts and the API are authoritative; state on disk only spares us a
+false alarm. A missing or stale file means re-survey and re-seed by the
+calibration above — it never means there are no requests, and a watch
+that reports an empty survey because its state directory was empty has
+reported the directory, not the world. Prune a request's file when it
+leaves the open set, so the directory stays a picture of what is being
+watched rather than an archive of what once was.
+
 ## Rechecking on demand
 
 "Check on our requests" against a running watch is two jobs, and both
