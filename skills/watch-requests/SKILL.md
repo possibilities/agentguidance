@@ -11,14 +11,32 @@ falls behind. This skill is the standing watch — first a survey of what
 is out there, then, with approval, a loop that keeps every open request
 moving and knows what to do when one lands.
 
+## Scope
+
+Where the session started decides how wide the survey goes, unless the
+request says otherwise:
+
+- **Machine-wide** — started outside any git checkout, or inside the
+  checkout that administers this machine's fleet (`~/code/agentstart`),
+  which owns the machine's toolchain rather than one project. Walk every
+  checkout.
+- **This project only** — started in any other checkout. Survey that
+  repository alone: its own upstream, its own requests. A project
+  session asking about its requests does not want the machine's.
+
+Say which scope is in play in the report, so a narrow survey is never
+mistaken for the whole picture.
+
 ## Survey
 
 Find the requests rather than asking for them:
 
-- Enumerate the git checkouts on this machine — the operator's own
-  projects and the clones of other people's kept for patches and
-  research. The machine's conventions say where both live; infer from
-  them rather than keeping a list here.
+- Enumerate the git checkouts in scope. Machine-wide, that is every
+  checkout on the machine — the operator's own projects and the clones
+  of other people's kept for patches and research; the machine's
+  conventions say where both live, so infer from them rather than
+  keeping a list here. Project scope is the one checkout, plus the
+  worktrees and sibling checkouts of that same repository.
 - For each checkout, resolve the upstream repository from its remotes:
   a remote owned by someone else is the upstream directly, and a remote
   that is our fork points at its parent
@@ -28,7 +46,8 @@ Find the requests rather than asking for them:
   `gh pr list --repo UPSTREAM --author @me --state open`. A global
   `gh search prs --author @me --state open` is a useful cross-check for
   upstreams with no local checkout, but the checkout walk is the source
-  of truth.
+  of truth — and under project scope the cross-check is filtered to that
+  upstream, not a back door to the machine-wide list.
 
 ## Report and get approval
 
@@ -102,9 +121,9 @@ find it and aim it, never to fix the branch itself and never to push.
 are re-runs of what has already been established rather than new
 invention:
 
-- **Re-survey.** Run the survey again from the checkouts to catch
-  requests opened since the watch started, and requests that have left
-  the open set.
+- **Re-survey.** Run the survey again from the checkouts, at the scope
+  the watch was started with, to catch requests opened since then and
+  requests that have left the open set.
 - **Reconcile.** Re-run the status check on every watched request and
   compare it against the state the watch believes it is in. Report the
   drift as drift — a request the watch thinks is green that is failing,
