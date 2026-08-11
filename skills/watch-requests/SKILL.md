@@ -83,7 +83,8 @@ change the branch is handed back (below) rather than done here.
 - **Fallen behind or conflicting** — a handoff; the rebase belongs to
   the session that owns the branch.
 - **Merge or close** — notify the human, then check for recorded
-  follow-up (below).
+  follow-up (below). A merge does not always end the watch: when the
+  aftermath waits on a release, the watch moves to the release.
 - **Anything else** — a situation these rules do not cover means
   notifying the human, not improvising.
 
@@ -169,15 +170,46 @@ one-line-per-request shape.
 
 ## After a merge
 
-A merged request usually has consequences on this machine, and they
-rarely land in the repository the patch was written against. A fork
-carried only for the patch collapses back to a plain upstream install; a
-pinned version moves once the fix ships in a release; an installer stops
-provisioning something. That work belongs to whichever repository owns
-the wiring — often the one that administers the machine's toolchain,
+A merged request has consequences on this machine, they rarely land in
+the repository the patch was written against, and they arrive at two
+different times. Immediately: the fork carrying that patch no longer
+needs to carry it, so it rebases onto upstream's current head and the
+merged commit falls out of the stack. Eventually: when the merged patch
+was the last one the fork carried, the fork itself stops being needed
+and the machine goes back to a plain upstream install — and with it move
+the pinned version, the installer that provisions the fork, and the map
+that describes it. That work belongs to whichever repository owns the
+wiring — often the one that administers the machine's toolchain,
 sometimes the fleet repo whose installer does the provisioning — and the
-watch hands it over exactly like everything else.
+watch hands all of it over exactly like everything else.
 
+The merge alone does not always license the second step. A fork
+installed from a git checkout collapses as soon as the patch is
+upstream. A fork standing in for a published package collapses only when
+a release carrying the fix is published — merged but unreleased means
+the registry still ships the bug, and unwiring early reinstalls it.
+Which one is in play is decided by how the thing is installed, not by
+how it was patched.
+
+- **Rebase the fork, as a handoff.** Every merge, patches remaining or
+  not: the fork's branch rebases onto upstream's head, the merged commit
+  drops, and whatever the machine installs from that fork is rebuilt.
+  The watch does not do this — it aims it at the fork's checkout, with
+  the merge commit named so the resumed session can tell a dropped patch
+  from a lost one.
+- **When patches remain**, that is the whole aftermath. Say which
+  patches the fork still carries and stop; the collapse is not due yet.
+- **When it was the last patch and the collapse is merge-gated**, hand
+  over the unwiring now, by the rules below.
+- **When it was the last patch and the collapse is release-gated**, do
+  not hand over the unwiring yet — the watch stays alive on the
+  registry instead of the request. Poll the published version at a
+  cadence matched to that project's release rhythm, and confirm the
+  merge is actually in the release — a changelog entry, a tag containing
+  the commit, or the diff — because a version bump is not by itself
+  evidence the fix shipped. Report the wait once when it begins, stay
+  silent through it, and hand the unwiring over naming the release that
+  carries the fix.
 - **Find the recorded follow-up.** Check the machine's records — memory,
   the wiki, the owning repository's own guidance — for the process. When
   none is recorded, say the request landed and stop; never invent
