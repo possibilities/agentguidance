@@ -10,10 +10,11 @@ rebuild them.
 Two kinds of render point, spliced by `scripts/render`:
 
 - `<!-- fragment: NAME.md -->` — repo-owned shared doctrine from
-  `fragments/`, so the skills that share a spine (collab, build, and
-  orchestrate share classification, the sketch contract, build norms, the
-  domain-model discipline, and the orchestrator's conduct) cannot drift
-  apart. A missing fragment fails the render.
+  `fragments/`, so the skills that share a spine (collab, build,
+  orchestrate, and prompt share classification, the sketch contract, build
+  norms, the domain-model discipline, the orchestrator's conduct, and the
+  orchestrator's own tools) cannot drift apart. A missing fragment fails
+  the render.
 - `<!-- extension-prompt: NAME.md -->` — operator-owned machine voice from
   `~/.config/agentguidance/` (linked there by AgentStart from its
   `prompts/agentguidance/`). An absent file renders to nothing.
@@ -58,6 +59,10 @@ lives in two siblings, and some changes here must cascade:
   updater): a SKILL.md edit is live within six hours, or on demand by
   running that script. Whether a new skill earns a TOOLS.md advertisement
   line is a deliberate decision — `agentwiki get tool-advertisement-policy`.
+  A skill for the orchestrator's own craft is advertised in
+  `fragments/orchestrator-tools.md` instead, which only orchestrator
+  surfaces splice — scoping by advertisement, the same way `email` stays
+  reachable but unadvertised.
 - Adding or removing a call to another fleet tool changes the fleet map:
   update `~/code/agentstart/skills/fleet/MAP.md` (served by the `fleet`
   skill, every edge with evidence) in the same change.

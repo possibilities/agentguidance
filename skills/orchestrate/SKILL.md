@@ -51,6 +51,10 @@ settled, not in a batch later.
 After work lands, one breath each: what is resolved, what remains, what is
 worth doing next. When nothing is left, say the thread is clear.
 
+## Orchestrator tools
+
+<!-- fragment: orchestrator-tools.md -->
+
 <!-- extension-prompt: SYSTEM.md -->
 
 <!-- extension-prompt: GUIDELINES.md -->

@@ -18,7 +18,7 @@ fi
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in build collab email notify orchestrate resource-create resource-update story watch-requests; do
+for skill in build collab email notify orchestrate prompt resource-create resource-update story watch-requests; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
@@ -85,6 +85,16 @@ grep -F 'validate-extension-splice' "$rendered" >/dev/null \
 [ ! -e "$render_home/.agents/skills/retired-validate" ] \
     || fail "the render did not prune a retired skill it once produced"
 
+# The orchestrator-only tools section renders into orchestrator surfaces
+# and nowhere else: that advertisement scoping is the design, so its
+# presence on both surfaces and absence from a worker skill are asserted.
+rendered_orchestrate="$render_home/.agents/skills/orchestrate/SKILL.md"
+grep -F 'help me steer that agent' "$rendered_orchestrate" >/dev/null \
+    || fail "the rendered orchestrate skill is missing the orchestrator tools splice"
+if grep -F 'help me steer that agent' "$rendered" >/dev/null; then
+    fail "the orchestrator tools section leaked into a worker skill"
+fi
+
 # The prompt templates render the same way: banner-stamped, fully spliced,
 # read-only, and pruned when the template is gone.
 rendered_prompt="$render_home/.agents/prompts/agentvoice/ORCHESTRATOR.md"
@@ -107,6 +117,8 @@ for source_grounding_rule in \
 done
 grep -F 'validate-agentvoice-system-extension' "$rendered_prompt" >/dev/null \
     || fail "the rendered prompt did not splice the SYSTEM.md extension prompt"
+grep -F 'help me steer that agent' "$rendered_prompt" >/dev/null \
+    || fail "the rendered prompt is missing the orchestrator tools splice"
 [ ! -w "$rendered_prompt" ] || fail "the rendered prompt is not read-only"
 [ ! -e "$render_home/.agents/prompts/agentvoice/RETIRED_VALIDATE.md" ] \
     || fail "the render did not prune a retired prompt it once produced"

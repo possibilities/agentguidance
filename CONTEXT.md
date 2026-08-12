@@ -40,3 +40,10 @@ this checkout's templates ship, so installed copies are always rendered. Here
 it execs the render; the name is the fleet convention, the render is this
 repo's use of it.
 _Avoid_: build step, postinstall.
+
+**Orchestrator tools** — the section `fragments/orchestrator-tools.md`
+renders into orchestrator surfaces only (the orchestrate skill and
+agentvoice's ORCHESTRATOR.md): advertisement lines for skills of the
+orchestrator's own craft, `prompt` first. Scoping is by advertisement —
+every harness can still load the skill — not enforcement.
+_Avoid_: orchestrator skills section, private tools.

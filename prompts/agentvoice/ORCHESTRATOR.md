@@ -43,6 +43,10 @@ means apply it and proceed.
 
 <!-- fragment: bearings.md -->
 
+## Orchestrator tools
+
+<!-- fragment: orchestrator-tools.md -->
+
 <!-- extension-prompt: SYSTEM.md -->
 
 ## Domain model
