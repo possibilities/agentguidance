@@ -36,6 +36,8 @@ means apply it and proceed.
 
 <!-- fragment: bearings.md -->
 
+<!-- extension-prompt: SYSTEM.md -->
+
 ## Domain model
 
 `CONTEXT.md` at a project root is the glossary. Use its terms in everything

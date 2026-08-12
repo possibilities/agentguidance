@@ -54,6 +54,8 @@ command -v bun >/dev/null 2>&1 || fail "bun is required to validate the render"
 render_home=$(mktemp -d "${TMPDIR:-/tmp}/agentguidance-validate.XXXXXX")
 trap 'rm -rf "$render_home"' EXIT
 mkdir -p "$render_home/.config/agentguidance"
+printf '## System\n\nvalidate-agentvoice-system-extension\n' \
+    >"$render_home/.config/agentguidance/SYSTEM.md"
 printf '## Tools\n\nvalidate-extension-splice\n' \
     >"$render_home/.config/agentguidance/TOOLS.md"
 mkdir -p "$render_home/.agents/skills/retired-validate"
@@ -95,6 +97,8 @@ if grep -E '<!-- (fragment|extension-prompt):' "$rendered_prompt" >/dev/null; th
 fi
 grep -F 'the conversation is yours' "$rendered_prompt" >/dev/null \
     || fail "the rendered prompt did not splice the orchestrator conduct fragment"
+grep -F 'validate-agentvoice-system-extension' "$rendered_prompt" >/dev/null \
+    || fail "the rendered prompt did not splice the SYSTEM.md extension prompt"
 [ ! -w "$rendered_prompt" ] || fail "the rendered prompt is not read-only"
 [ ! -e "$render_home/.agents/prompts/agentvoice/RETIRED_VALIDATE.md" ] \
     || fail "the render did not prune a retired prompt it once produced"
