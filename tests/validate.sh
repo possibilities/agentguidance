@@ -18,7 +18,7 @@ fi
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in build collab email notify resource-create resource-update story watch-requests; do
+for skill in build collab email notify orchestrate resource-create resource-update story watch-requests; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
@@ -40,7 +40,7 @@ grep -F '/render' scripts/post-sync >/dev/null \
     || fail "CLAUDE.md must be a symlink to AGENTS.md"
 
 # Public-repo hygiene: nothing here may assume an account name.
-if grep -rn '/Users/' skills fragments scripts README.md AGENTS.md CONTEXT.md 2>/dev/null; then
+if grep -rn '/Users/' skills fragments prompts scripts README.md AGENTS.md CONTEXT.md 2>/dev/null; then
     fail "a literal /Users/ path assumes an account name; resolve from \$HOME instead"
 fi
 
@@ -59,6 +59,9 @@ printf '## Tools\n\nvalidate-extension-splice\n' \
 mkdir -p "$render_home/.agents/skills/retired-validate"
 printf '<!-- Rendered from %s/skills/retired-validate/SKILL.md — do not edit; change the template or extension prompts and re-run scripts/render. -->\nstale\n' \
     "$root" >"$render_home/.agents/skills/retired-validate/SKILL.md"
+mkdir -p "$render_home/.agents/prompts/agentvoice"
+printf '<!-- Rendered from %s/prompts/agentvoice/RETIRED_VALIDATE.md — do not edit; change the template or extension prompts and re-run scripts/render. -->\nstale\n' \
+    "$root" >"$render_home/.agents/prompts/agentvoice/RETIRED_VALIDATE.md"
 
 HOME="$render_home" scripts/render >/dev/null \
     || fail "the render failed against a fixture HOME"
@@ -79,5 +82,21 @@ grep -F 'validate-extension-splice' "$rendered" >/dev/null \
     || fail "the rendered resource-update manifest symlink does not resolve"
 [ ! -e "$render_home/.agents/skills/retired-validate" ] \
     || fail "the render did not prune a retired skill it once produced"
+
+# The prompt templates render the same way: banner-stamped, fully spliced,
+# read-only, and pruned when the template is gone.
+rendered_prompt="$render_home/.agents/prompts/agentvoice/ORCHESTRATOR.md"
+[ -f "$rendered_prompt" ] \
+    || fail "the render did not install the agentvoice orchestrator prompt"
+grep -F "Rendered from $root/prompts/agentvoice/ORCHESTRATOR.md" "$rendered_prompt" >/dev/null \
+    || fail "the rendered prompt is missing its provenance banner"
+if grep -E '<!-- (fragment|extension-prompt):' "$rendered_prompt" >/dev/null; then
+    fail "the rendered prompt still contains raw render points"
+fi
+grep -F 'the conversation is yours' "$rendered_prompt" >/dev/null \
+    || fail "the rendered prompt did not splice the orchestrator conduct fragment"
+[ ! -w "$rendered_prompt" ] || fail "the rendered prompt is not read-only"
+[ ! -e "$render_home/.agents/prompts/agentvoice/RETIRED_VALIDATE.md" ] \
+    || fail "the render did not prune a retired prompt it once produced"
 
 printf 'ok\n'

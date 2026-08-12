@@ -1,19 +1,30 @@
 # Agentguidance agent guidance
 
-Skill directories under `skills/` are templates. The installed copies under
-`~/.agents/skills/` are rendered artifacts — never edit them. After changing
-any skill template, a fragment in `fragments/`, or an extension prompt in
-`~/.config/agentguidance/`, run `scripts/render` to rebuild them.
+Skill directories under `skills/` and prompt templates under
+`prompts/<consumer>/` are templates. The installed copies under
+`~/.agents/skills/` and `~/.agents/prompts/` are rendered artifacts — never
+edit them. After changing any template, a fragment in `fragments/`, or an
+extension prompt in `~/.config/agentguidance/`, run `scripts/render` to
+rebuild them.
 
 Two kinds of render point, spliced by `scripts/render`:
 
 - `<!-- fragment: NAME.md -->` — repo-owned shared doctrine from
-  `fragments/`, so the skills that share a spine (collab and build share
-  classification, the sketch contract, build norms, and the domain-model
-  discipline) cannot drift apart. A missing fragment fails the render.
+  `fragments/`, so the skills that share a spine (collab, build, and
+  orchestrate share classification, the sketch contract, build norms, the
+  domain-model discipline, and the orchestrator's conduct) cannot drift
+  apart. A missing fragment fails the render.
 - `<!-- extension-prompt: NAME.md -->` — operator-owned machine voice from
   `~/.config/agentguidance/` (linked there by AgentStart from its
   `prompts/agentguidance/`). An absent file renders to nothing.
+
+A prompt template under `prompts/<consumer>/` is doctrine one app consumes
+as a prompt file rather than a skill — agentvoice's orchestrator files, for
+now. It renders to `~/.agents/prompts/<consumer>/NAME.md`; the consumer's
+own installer links the rendered file from wherever that app discovers it
+(AgentStart links `~/.config/agentvoice/` for agentvoice), so this repo owns
+the content and the consumer's installer owns that it is wired. Deleting a
+template prunes its rendered copy, banner-matched like a skill's.
 
 This checkout is an ordinary agent* scan participant: AgentStart's sync-skills
 ships `skills/<name>/` whole, then runs `scripts/post-sync` — the render —
