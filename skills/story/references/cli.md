@@ -80,30 +80,6 @@ agentwiki add part-01-<slug>.md --title "<title> — <part>" --tags stories,part
 One `add` per part. Write `[[<part-slug>]]` into the spine for each, then
 check `agentwiki links <spine-slug> --json` to prove every part resolved.
 
-## Artifact-phase publishing
-
-The interactive render is published as an immutable artifact, paired with a
-snapshot of the story body it was rendered from — the pair and its rationale
-are in artifact.md:
-
-```bash
-agentwiki publish <story.snapshot.md> --name <story-slug> --kind evidence \
-    --title "<story title>" --tag stories --json
-agentwiki publish <story.html> --name <story-slug> --kind render \
-    --title "<story title>" --tag stories --json
-```
-
-`data.version_url` (`/a/<name>/v/<hash>/`) is immutable and is the one to
-cite. `data.url` tracks latest and will move under a later publish. Publishing
-also writes a stub document into the vault, which is what puts the render into
-the searchable graph; repeat `--tag` on every publish, because tags are
-per-version and do not carry over.
-
-`agentwiki serve` answers artifacts on their own loopback origin, so a render
-gets storage and can load and fetch its own files, while reaching neither the
-vault's documents nor the network. Both URLs above are paths, so they are
-cited as-is; the document port redirects to the artifact origin.
-
 ## Fallback, and the rule that beats everything
 
 - **No CLI reachable:** write the story to a path the user names, or to

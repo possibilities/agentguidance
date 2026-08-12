@@ -8,8 +8,8 @@ description: Teach a software subject — a project, subsystem, feature, file, o
 Write a story that teaches a software subject the way an excellent teacher and
 storyteller would: inventory the subject first, narrate it around what users
 and developers experience, prove against the inventory that nothing important
-was omitted, and save one Markdown document into the wiki vault. The prose is the product; an interactive artifact is an
-optional presentation of it, offered once at the end.
+was omitted, and save one Markdown document into the wiki vault. The prose is
+the product.
 
 ## Ground rules
 
@@ -35,8 +35,8 @@ optional presentation of it, offered once at the end.
 - **Honest absences.** What the subject does not do, and its known limits, are
   part of the story.
 - **One question at a time**, and only for decisions the reader's human must
-  make: an unresolvable scope, the too-big-subject choice, and the artifact
-  offer. Never batch them, never ask about mechanics this skill decides.
+  make: an unresolvable scope and the too-big-subject choice. Never batch
+  them, never ask about mechanics this skill decides.
 
 ## Workflow
 
@@ -88,13 +88,6 @@ update-not-duplicate rule for re-runs, the fallback when no CLI is reachable,
 and the rule that an explicit path from the user always wins. Report the
 document slug and location.
 
-### 7. Offer the artifact
-
-After the prose is saved, ask exactly once whether the human wants the story
-as an interactive artifact. Declining is the default and costs nothing. On
-yes, build and attach it per [references/artifact.md](references/artifact.md).
-Never build it unasked, and never ask earlier.
-
 ## References
 
 - [references/schema.md](references/schema.md) — document schema, provenance
@@ -103,9 +96,6 @@ Never build it unasked, and never ask earlier.
 - [references/craft.md](references/craft.md) — the storytelling rules and
   anti-patterns that keep this a story rather than an API reference.
 - [references/cli.md](references/cli.md) — fail-closed CLI resolution and the
-  exact vault invocations for lookup, create, update, and publishing.
-- [references/artifact.md](references/artifact.md) — the interactive render
-  contract: self-containment, presentation-not-content, the source/render
-  attachment sequence, and the serving caveat.
+  exact vault invocations for lookup, create, and update.
 - [references/testing.md](references/testing.md) — the forward-test suite
   (T1–T7) and judging protocol for changes to this skill.

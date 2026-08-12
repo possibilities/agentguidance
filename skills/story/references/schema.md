@@ -132,7 +132,7 @@ coverage appendix) and `artifacts/part-NN-slug.md` are the parts, with
 relative links in both directions (`artifacts/part-02-gateway.md#anchor`
 down, `../document.md` up). Because that is byte-for-byte the store's on-disk
 layout, adoption changes nothing about the links: create the document from
-the spine, then attach each part (see cli.md). Standalone, the folder reads
+the spine, then `add` each part (see cli.md). Standalone, the folder reads
 fine in any Markdown viewer.
 
 ## Length calibration
@@ -155,7 +155,7 @@ coverage silently.
 ## Re-runs update, not duplicate
 
 Before creating, look for an existing story of the same subject (see cli.md
-for the lookup). A match is updated as a new revision with `--if-revision`; a
-story whose scope genuinely shifted gets a new document with a `supersedes`
-link. A story states its commit and goes stale visibly by design — there is
+for the lookup). A match is updated in place — an update is a file write, not
+a command (see cli.md); a story whose scope genuinely shifted gets a new
+document with a `supersedes` link. A story states its commit and goes stale visibly by design — there is
 no automatic refresh; the `supersedes` chain is the update path.
