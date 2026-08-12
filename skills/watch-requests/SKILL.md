@@ -49,6 +49,12 @@ Find the requests rather than asking for them:
   request against one is unactionable rather than pending; excluding it
   where the set is built keeps every stage downstream free of a special
   case for it.
+- In a fork we carry patches on, read the branches by the machine's fork
+  convention rather than by guesswork: `integration` is what the machine
+  installs and is nobody's review context, and every other branch beside it
+  is a patch offered upstream. A request's head branch is therefore always
+  one of the latter, and a survey that reports `integration` as a pull
+  request has misread the checkout.
 - List the open requests we authored against each upstream:
   `gh pr list --repo UPSTREAM --author @me --state open`. A global
   `gh search prs --author @me --state open` is a useful cross-check for
@@ -334,13 +340,16 @@ Which one is in play is decided by how the thing is installed, not by
 how it was patched.
 
 - **Rebase the fork, as a handoff.** Every merge, patches remaining or
-  not: the fork's branch rebases onto upstream's head, the merged commit
-  drops, and whatever the machine installs from that fork is rebuilt.
-  The watch does not do this — it aims it at the fork's checkout, with
-  the merge commit named so the resumed session can tell a dropped patch
-  from a lost one.
+  not: the fork's `integration` branch rebases onto upstream's head, the
+  merged commit drops, and whatever the machine installs from that fork
+  is rebuilt. Name that branch in the handoff — `integration`, not the
+  request's own head branch, which is the review context and is not what
+  the machine installs. The watch does not do this — it aims it at the
+  fork's checkout, with the merge commit named so the resumed session can
+  tell a dropped patch from a lost one.
 - **When patches remain**, that is the whole aftermath. Say which
-  patches the fork still carries and stop; the collapse is not due yet.
+  patches the fork still carries — read them off `integration`, which is
+  the merged stack — and stop; the collapse is not due yet.
 - **When it was the last patch and the collapse is merge-gated**, hand
   over the unwiring now, by the rules below.
 - **When it was the last patch and the collapse is release-gated**, do
@@ -359,7 +368,10 @@ how it was patched.
 - **Find the owner.** The repository whose installer, pin, or guidance
   encodes the thing that must change. That is the working directory the
   aftermath prompt is aimed at, and it is usually not where the patch
-  was written.
+  was written. For a fork, the owner is whichever installer declares the
+  binding, and the collapse is that declaration flipped off and the
+  installer re-run — never an edit to the installed shim, which the next
+  install rewrites.
 - **Write it as fresh-agent work in that directory**, not as a resume:
   the aftermath is a new job in another repository, and the session that
   wrote the patch has nothing useful to contribute to it. The prompt
