@@ -68,7 +68,7 @@ can tell from the outside which one is theirs.
 
 A seam that explains the documents has become the report. Length is the tell.
 
-`MANIFEST.json` — per `resources/MANIFEST.md`. Record the queries verbatim, every
+`MANIFEST.json` — per `MANIFEST.md` beside this skill. Record the queries verbatim, every
 included document with its `document_id`/`ingested`/`chars`, every exclusion with
 its reason, and every gap with a `check` command.
 
@@ -76,4 +76,5 @@ its reason, and every gap with a `check` command.
 
 State the path, the file count, and the size. Name anything you excluded and
 anything still missing — a resource that hides its gaps is worse than a short
-one. Then say plainly that `resource-update <slug>` will refresh it.
+one. Then say plainly that the `resource-update` skill, given the resource's
+slug, will refresh it.

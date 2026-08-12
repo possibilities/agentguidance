@@ -209,7 +209,7 @@ find it and aim it, never to fix the branch itself and never to push.
   in the commits and, where prose is owed, a reply comment — an
   automated reviewer usually needs none; then push and watch the run to
   green rather than stopping at the push.
-- **Reach the human** through the notify skill with the outcome in one
+- **Reach the human** through the `notify` skill with the outcome in one
   line, then put the delivery and the prompt in the transcript for them
   (below).
 - **When no origin session can be found**, say so plainly and hand the
@@ -385,6 +385,6 @@ how it was patched.
 
 ## Reaching the human
 
-Route anything that needs the human through the notify skill so it
+Route anything that needs the human through the `notify` skill so it
 lands even when they are away from the terminal, and write it as the
 outcome in one line.
