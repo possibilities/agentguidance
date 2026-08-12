@@ -40,8 +40,6 @@ On approval, build the sketch.
 
 <!-- fragment: build-well.md -->
 
-<!-- fragment: wait-well.md -->
-
 ## Domain model
 
 <!-- fragment: domain-model.md -->
