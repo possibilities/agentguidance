@@ -97,6 +97,14 @@ if grep -E '<!-- (fragment|extension-prompt):' "$rendered_prompt" >/dev/null; th
 fi
 grep -F 'the conversation is yours' "$rendered_prompt" >/dev/null \
     || fail "the rendered prompt did not splice the orchestrator conduct fragment"
+for source_grounding_rule in \
+    'inspect the relevant source' \
+    'Separate what the code establishes from what you infer.' \
+    "user's observation as something to verify" \
+    'If you have not verified a claim, say so explicitly.'; do
+    grep -F "$source_grounding_rule" "$rendered_prompt" >/dev/null \
+        || fail "the rendered prompt is missing source-grounding doctrine: $source_grounding_rule"
+done
 grep -F 'validate-agentvoice-system-extension' "$rendered_prompt" >/dev/null \
     || fail "the rendered prompt did not splice the SYSTEM.md extension prompt"
 [ ! -w "$rendered_prompt" ] || fail "the rendered prompt is not read-only"
