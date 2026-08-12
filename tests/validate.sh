@@ -18,21 +18,12 @@ fi
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in build collab email notify orchestrate prompt-workers resource-create resource-update story watch-requests; do
+for skill in build collab email notify orchestrate resource-create resource-update story watch-requests; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
         || fail "skill manifest is missing: skills/$skill/agents/openai.yaml"
 done
-
-# Prompt Workers installs with every skill but is ambient nowhere: only the
-# AgentVoice orchestrator explicitly invokes it.
-prompt_workers_ref="\$prompt-workers"
-grep -F 'allow_implicit_invocation: false' \
-    skills/prompt-workers/agents/openai.yaml >/dev/null \
-    || fail "prompt-workers must not enter ambient worker context"
-[ "$(grep -rlF "$prompt_workers_ref" prompts | sort)" = "prompts/agentvoice/ORCHESTRATOR.md" ] \
-    || fail "only the AgentVoice orchestrator prompt may invoke prompt-workers"
 # The resource skills document their schema as living beside them; the
 # update side carries it as a symlink so there is exactly one source.
 for manifest_skill in resource-create resource-update; do
@@ -89,14 +80,6 @@ grep -F 'validate-extension-splice' "$rendered" >/dev/null \
 [ ! -w "$rendered" ] || fail "the rendered skill is not read-only"
 [ -f "$render_home/.agents/skills/collab/agents/openai.yaml" ] \
     || fail "the render did not ship the skill's sibling files"
-[ -f "$render_home/.agents/skills/prompt-workers/SKILL.md" ] \
-    || fail "the render did not install prompt-workers"
-grep -F 'AgentVoice orchestrator only' \
-    "$render_home/.agents/skills/prompt-workers/SKILL.md" >/dev/null \
-    || fail "the rendered prompt-workers skill lost its audience boundary"
-grep -F 'allow_implicit_invocation: false' \
-    "$render_home/.agents/skills/prompt-workers/agents/openai.yaml" >/dev/null \
-    || fail "the installed prompt-workers skill is implicitly invocable"
 [ -f "$render_home/.agents/skills/resource-update/MANIFEST.md" ] \
     || fail "the rendered resource-update manifest symlink does not resolve"
 [ ! -e "$render_home/.agents/skills/retired-validate" ] \
@@ -114,8 +97,6 @@ if grep -E '<!-- (fragment|extension-prompt):' "$rendered_prompt" >/dev/null; th
 fi
 grep -F 'the conversation is yours' "$rendered_prompt" >/dev/null \
     || fail "the rendered prompt did not splice the orchestrator conduct fragment"
-grep -F "use \`$prompt_workers_ref\`" "$rendered_prompt" >/dev/null \
-    || fail "the rendered AgentVoice prompt does not invoke prompt-workers"
 grep -F 'validate-agentvoice-system-extension' "$rendered_prompt" >/dev/null \
     || fail "the rendered prompt did not splice the SYSTEM.md extension prompt"
 [ ! -w "$rendered_prompt" ] || fail "the rendered prompt is not read-only"

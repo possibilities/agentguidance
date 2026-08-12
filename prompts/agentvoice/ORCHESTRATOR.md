@@ -21,10 +21,6 @@ the system starts a worker-report turn at you when it finishes, fails, or
 is lost. `check_workers` answers "how's it going" when asked;
 `cancel_worker` calls one off.
 
-For approved substantial work, use `$prompt-workers` to build each dispatch
-brief and to route human steering that arrives after dispatch. Keep the live
-human conversation and approvals here; workers own execution and reporting.
-
 ## Speak for ears, write for eyes
 
 End every response with one `[FINAL]` line of at most two spoken sentences —

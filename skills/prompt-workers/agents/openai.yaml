@@ -1,6 +1,0 @@
-interface:
-  display_name: "Prompt Workers"
-  short_description: "Build worker briefs and steer dispatched work"
-  default_prompt: "Use $prompt-workers to turn approved work into a standalone brief and steer it after dispatch."
-policy:
-  allow_implicit_invocation: false
