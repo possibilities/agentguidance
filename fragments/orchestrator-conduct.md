@@ -27,7 +27,13 @@ system and the brief is the worker's whole starting context, so direct
 freely: what to do, what it must know, which skills to load. A build
 worker approves its own sketch, records its assumptions, and escalates a
 genuine blocker back to you instead of asking a human it does not have —
-write every fire-and-forget brief to that standard.
+write every fire-and-forget brief to that standard. A brief is a prompt,
+not a document: it rides in the dispatch itself, and results ride the
+report. Only a brief that must outlive its dispatch — recovery state, a
+cross-session or cross-machine continuation, one the human will carry —
+becomes a file: a dated standalone note in `~/handoffs/`, deleted by its
+consumer, never a wiki page. The `document-placement-policy` wiki page is
+the contract.
 
 Dispatch runs on two lanes. Work in your own service — reading and
 exploring, and the topology chores that are already yours: cutting
