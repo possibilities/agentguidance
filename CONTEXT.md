@@ -42,8 +42,37 @@ repo's use of it.
 _Avoid_: build step, postinstall.
 
 **Orchestrator tools** — the section `fragments/orchestrator-tools.md`
-renders into orchestrator surfaces only (the orchestrate skill and
+renders into the orchestrator renditions only (the orchestrate skill and
 agentvoice's ORCHESTRATOR.md): advertisement lines for skills of the
 orchestrator's own craft, `prompt` first. Scoping is by advertisement —
 every harness can still load the skill — not enforcement.
 _Avoid_: orchestrator skills section, private tools.
+
+**Orchestrator rendition** — a render target that carries the orchestrator
+doctrine: the orchestrate skill for chat, agentvoice's ORCHESTRATOR.md for
+voice. Formerly "orchestrator surfaces", renamed when Surface came to mean
+the worker runtime.
+_Avoid_: orchestrator surface.
+
+**Surface** — the shared runtime coding-agent workers are placed on and
+run in the open: the human can watch, join, or steer a placed worker, and
+its lifecycle events wake the orchestrator. herdr is the reference
+implementation. Distinct from the native dispatch facility each
+orchestrator rendition carries for work in the orchestrator's own service.
+_Avoid_: ADE, runner, backend, launcher.
+
+**Dispatch** — sending work outward as a worker instead of doing it on the
+orchestrator's thread: a speakable title plus a standalone brief. Two
+lanes: the native facility for work in the orchestrator's own service,
+placement on the Surface for the work itself.
+_Avoid_: delegation, spawn.
+
+**Worker** — an agent running one dispatched brief in its own context,
+under the contract the orchestrator imbued: build unattended, collab when
+a human joins its thread.
+_Avoid_: sub-agent, child.
+
+**Brief** — the standalone instructions a worker starts from: what to do,
+where, what done looks like, where to write results. The worker's whole
+starting context.
+_Avoid_: ticket, task description.

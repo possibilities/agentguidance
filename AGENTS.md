@@ -60,8 +60,8 @@ lives in two siblings, and some changes here must cascade:
   running that script. Whether a new skill earns a TOOLS.md advertisement
   line is a deliberate decision — `agentwiki get tool-advertisement-policy`.
   A skill for the orchestrator's own craft is advertised in
-  `fragments/orchestrator-tools.md` instead, which only orchestrator
-  surfaces splice — scoping by advertisement, the same way `email` stays
+  `fragments/orchestrator-tools.md` instead, which only the orchestrator
+  renditions splice — scoping by advertisement, the same way `email` stays
   reachable but unadvertised.
 - Adding or removing a call to another fleet tool changes the fleet map:
   update `~/code/agentstart/skills/fleet/MAP.md` (served by the `fleet`

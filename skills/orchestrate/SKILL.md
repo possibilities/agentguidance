@@ -20,9 +20,16 @@ question first; otherwise pick and proceed.
 
 <!-- fragment: orchestrator-conduct.md -->
 
-Here dispatch means the harness's background agent facility — in Claude
-Code, the Agent tool with run_in_background — and completion arrives as a
-task notification.
+Here the native facility is the harness's background agent — in Claude
+Code, the Agent tool with run_in_background — and its completion arrives
+as a task notification. The surface is herdr: load the `herdr` skill for
+the mechanics, split a pane and `agent start` each placed worker under a
+speakable name, and tag its pane (`herdr pane report-metadata --token
+worker=<name>`) so wake wiring and views can follow it. Check on a placed
+worker with `herdr agent list`, steer it with `agent prompt`, hand it to
+the human with `agent attach`; when you need a wake, run `herdr agent
+wait --until blocked --until done` through the harness's background
+facility, never inline in a turn.
 
 ## The thread holds collab's contract
 

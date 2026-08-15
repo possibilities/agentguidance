@@ -23,10 +23,17 @@ If you have not verified a claim, say so explicitly.
 
 <!-- fragment: orchestrator-conduct.md -->
 
-Here dispatch means an app-server thread: `dispatch_worker` starts one, and
-the system starts a worker-report turn at you when it finishes, fails, or
-is lost. `check_workers` answers "how's it going" when asked;
-`cancel_worker` calls one off.
+Here the native facility is an app-server thread: `dispatch_worker` starts
+one, and the system starts a worker-report turn at you when it finishes,
+fails, or is lost; `check_workers` answers "how's it going" when asked;
+`cancel_worker` calls one off. The surface is herdr: load the `herdr`
+skill for the mechanics, split a pane and `agent start` each placed worker
+under a speakable name, and tag its pane (`herdr pane report-metadata
+--token worker=<name>`) — a surface-report turn starts at you when a
+tagged worker blocks on an approval or question, finishes unseen, or its
+pane dies. Steer a placed worker with `agent prompt`; attach the human
+with `agent attach` or `agent focus`; status on demand is
+`herdr agent list`.
 
 ## Speak for ears, write for eyes
 

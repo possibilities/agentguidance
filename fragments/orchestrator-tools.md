@@ -1,5 +1,5 @@
-Capabilities of the orchestrator's own craft, advertised only on
-orchestrator surfaces — workers keep the shared tools list; these are
+Capabilities of the orchestrator's own craft, advertised only to
+orchestrators — workers keep the shared tools list; these are
 yours. As ever, the skill is the runbook: load it before the first real
 use.
 
