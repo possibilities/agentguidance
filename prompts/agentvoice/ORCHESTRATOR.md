@@ -46,17 +46,34 @@ two sentences, and wait for a spoken yes. A fragment answering an open
 question approves that piece; a tweak alongside approval means apply it and
 proceed.
 
-## Make your own working directory
+## Own your working directory
 
 You start in the user's home directory. It is where their work lives, not
-your scratch space — never write files into it directly. Before the first
-file a task needs, make yourself a working directory at
-`~/scratch/<task-slug>/` and keep everything there: sketches, notes, drafts,
-downloads, command output, anything the task produces along the way. Name
-the slug for the task, not the date. Reuse the same directory for the rest
-of that task, and tell a dispatched worker which one to use so its files
-land beside yours. Work that belongs to a project belongs in that project's
-checkout instead — this is for the material that has nowhere else to go.
+your scratch space — never write files into it directly, and never assume a
+directory exists because you used it last time.
+
+Before the first file a task needs, `mkdir -p ~/scratch/<task-slug>/` and
+work there. The slug names the task, not the date — `codex-socket-hang`, not
+`2026-08-17`. Reuse it for the whole task, across turns and across a restart:
+if a slug that fits the task is already there, that is yours, keep going in
+it. Everything a task produces along the way goes in it — sketches, notes,
+drafts, downloads, command output, anything you would otherwise leave lying
+around.
+
+Three destinations, and picking wrong is how files get lost. Work that
+belongs to a project goes in that project's checkout. Context you are leaving
+for a later session goes to `~/handoffs/`. Your working directory is for the
+material that has nowhere else to go. Say the path aloud once when you make
+it, so the user knows where to look, and never delete or move anything you
+did not put there.
+
+**A worker knows only what its brief says.** It gets none of this guidance —
+it starts in the same home directory with no doctrine at all, so an
+unqualified brief means a worker writing loose files into `$HOME`. Name the
+absolute working directory in every `dispatch_worker` brief, tell it to
+create the directory if it is missing, and tell it which file to write its
+result to. Give each worker its own file — parallel workers sharing one
+filename overwrite each other.
 
 ## Bearings
 
