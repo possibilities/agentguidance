@@ -53,14 +53,15 @@ command -v bun >/dev/null 2>&1 || fail "bun is required to validate the render"
 
 render_home=$(mktemp -d "${TMPDIR:-/tmp}/agentguidance-validate.XXXXXX")
 trap 'rm -rf "$render_home"' EXIT
+rendered_skills="$render_home/.local/share/agentstart/core-marketplace/plugins/agentstart-core/skills"
 mkdir -p "$render_home/.config/agentguidance"
 printf '## System\n\nvalidate-agentvoice-system-extension\n' \
     >"$render_home/.config/agentguidance/SYSTEM.md"
 printf '## Tools\n\nvalidate-extension-splice\n' \
     >"$render_home/.config/agentguidance/TOOLS.md"
-mkdir -p "$render_home/.agents/skills/retired-validate"
+mkdir -p "$rendered_skills/retired-validate"
 printf '<!-- Rendered from %s/skills/retired-validate/SKILL.md — do not edit; change the template or extension prompts and re-run scripts/render. -->\nstale\n' \
-    "$root" >"$render_home/.agents/skills/retired-validate/SKILL.md"
+    "$root" >"$rendered_skills/retired-validate/SKILL.md"
 mkdir -p "$render_home/.agents/prompts/agentvoice"
 printf '<!-- Rendered from %s/prompts/agentvoice/RETIRED_VALIDATE.md — do not edit; change the template or extension prompts and re-run scripts/render. -->\nstale\n' \
     "$root" >"$render_home/.agents/prompts/agentvoice/RETIRED_VALIDATE.md"
@@ -68,7 +69,7 @@ printf '<!-- Rendered from %s/prompts/agentvoice/RETIRED_VALIDATE.md — do not 
 HOME="$render_home" scripts/render >/dev/null \
     || fail "the render failed against a fixture HOME"
 
-rendered="$render_home/.agents/skills/collab/SKILL.md"
+rendered="$rendered_skills/collab/SKILL.md"
 [ -f "$rendered" ] || fail "the render did not install collab"
 grep -F "Rendered from $root/skills/collab/SKILL.md" "$rendered" >/dev/null \
     || fail "the rendered skill is missing its provenance banner"
@@ -78,18 +79,18 @@ fi
 grep -F 'validate-extension-splice' "$rendered" >/dev/null \
     || fail "the render did not splice a present extension prompt"
 [ ! -w "$rendered" ] || fail "the rendered skill is not read-only"
-[ -f "$render_home/.agents/skills/collab/agents/openai.yaml" ] \
+[ -f "$rendered_skills/collab/agents/openai.yaml" ] \
     || fail "the render did not ship the skill's sibling files"
-[ -f "$render_home/.agents/skills/resource-update/MANIFEST.md" ] \
+[ -f "$rendered_skills/resource-update/MANIFEST.md" ] \
     || fail "the rendered resource-update manifest symlink does not resolve"
-[ ! -e "$render_home/.agents/skills/retired-validate" ] \
+[ ! -e "$rendered_skills/retired-validate" ] \
     || fail "the render did not prune a retired skill it once produced"
 
 # The orchestrator-only tools section renders into the orchestrator
 # renditions and nowhere else: that advertisement scoping is the design, so
 # its presence on both renditions and absence from a worker skill are
 # asserted.
-rendered_orchestrate="$render_home/.agents/skills/orchestrate/SKILL.md"
+rendered_orchestrate="$rendered_skills/orchestrate/SKILL.md"
 grep -F 'help me steer that agent' "$rendered_orchestrate" >/dev/null \
     || fail "the rendered orchestrate skill is missing the orchestrator tools splice"
 if grep -F 'help me steer that agent' "$rendered" >/dev/null; then

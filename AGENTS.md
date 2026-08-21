@@ -2,10 +2,10 @@
 
 Skill directories under `skills/` and prompt templates under
 `prompts/<consumer>/` are templates. The installed copies under
-`~/.agents/skills/` and `~/.agents/prompts/` are rendered artifacts — never
-edit them. After changing any template, a fragment in `fragments/`, or an
-extension prompt in `~/.config/agentguidance/`, run `scripts/render` to
-rebuild them.
+`~/.local/share/agentstart/core-marketplace/plugins/agentstart-core/skills/`
+and `~/.agents/prompts/` are rendered artifacts — never edit them. After
+changing any template, a fragment in `fragments/`, or an extension prompt in
+`~/.config/agentguidance/`, run `scripts/render` to rebuild them.
 
 Two kinds of render point, spliced by `scripts/render`:
 
@@ -28,11 +28,12 @@ the content and the consumer's installer owns that it is wired. Deleting a
 template prunes its rendered copy, banner-matched like a skill's.
 
 This checkout is an ordinary agent* scan participant: AgentStart's sync-skills
-ships `skills/<name>/` whole, then runs `scripts/post-sync` — the render —
-so the raw templates it just shipped are immediately replaced by rendered
-artifacts. That hook is why the templates may live in `skills/` at all;
-without it, every six-hour sync would strip the extensions until the next
-render. Do not add an installer here and do not bypass the hook.
+ships `skills/<name>/` whole into its private core plugin, then runs
+`scripts/post-sync` — the render — so the raw templates it just shipped are
+immediately replaced by rendered artifacts. That hook is why the templates
+may live in `skills/` at all; without it, every six-hour sync would strip the
+extensions until the next render. Do not add an installer here and do not
+bypass the hook.
 
 Retiring a skill is deleting its directory: the render prunes the installed
 copy it once produced (banner-matched, so other tools' skills are untouched).
@@ -54,15 +55,13 @@ Run `tests/validate.sh` before committing.
 This checkout is one of the agent* fleet under `~/code`. Shared machinery
 lives in two siblings, and some changes here must cascade:
 
-- Skills under `skills/<name>/` ship globally through AgentStart's scan
+- Skills under `skills/<name>/` ship through AgentStart's private core plugin
   (`~/code/agentstart/scripts/sync-skills`, run six-hourly by the scheduled
-  updater): a SKILL.md edit is live within six hours, or on demand by
-  running that script. Whether a new skill earns a TOOLS.md advertisement
-  line is a deliberate decision — `agentwiki get tool-advertisement-policy`.
-  A skill for the orchestrator's own craft is advertised in
-  `fragments/orchestrator-tools.md` instead, which only the orchestrator
-  renditions splice — scoping by advertisement, the same way `email` stays
-  reachable but unadvertised.
+  updater): Claude Code and Codex expose them under the `agentstart-core`
+  plugin namespace, while Pi uses the plain skill name. A SKILL.md edit is
+  live within six hours, or on demand by running that script. Whether a new
+  skill earns a TOOLS.md advertisement line is a deliberate decision —
+  `agentwiki get tool-advertisement-policy`.
 - Adding or removing a call to another fleet tool changes the fleet map:
   update `~/code/agentstart/skills/fleet/MAP.md` (served by the `fleet`
   skill, every edge with evidence) in the same change.

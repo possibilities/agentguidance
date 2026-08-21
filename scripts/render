@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-// Render the skill templates under skills/ into ~/.agents/skills/, and the
+// Render the skill templates under skills/ into AgentStart's private core
+// plugin, and the
 // prompt templates under prompts/<consumer>/ into ~/.agents/prompts/<consumer>/,
 // splicing two kinds of render point:
 //   <!-- fragment: NAME.md -->          repo-owned shared doctrine, from
@@ -33,7 +34,18 @@ const configDir = join(
   process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
   "agentguidance",
 );
-const installRoot = join(homedir(), ".agents", "skills");
+const installRoot =
+  process.env.AGENTGUIDANCE_SKILLS_ROOT ??
+  join(
+    homedir(),
+    ".local",
+    "share",
+    "agentstart",
+    "core-marketplace",
+    "plugins",
+    "agentstart-core",
+    "skills",
+  );
 const promptsInstallRoot = join(homedir(), ".agents", "prompts");
 const skillsRoot = join(repoRoot, "skills");
 const promptsRoot = join(repoRoot, "prompts");

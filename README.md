@@ -18,13 +18,14 @@ repo carries only the doctrine that applies everywhere.
 
 ## Install
 
-AgentStart owns installation. Its skills scan ships `skills/<name>/` whole, then
-runs `scripts/post-sync` — the render — so the installed copies arrive already
-composed with the operator's extension prompts. Nothing here is installed by
-hand. A machine without the AgentStart seam can still render directly:
+AgentStart owns installation. Its skills scan ships `skills/<name>/` whole
+into the private `agentstart-core` plugin, then runs `scripts/post-sync` — the
+render — so the installed copies arrive already composed with the operator's
+extension prompts. Nothing here is installed by hand. A machine without the
+AgentStart seam can still render directly:
 
 ```sh
-scripts/render   # templates + fragments + ~/.config/agentguidance → ~/.agents/skills
+scripts/render   # templates + fragments + ~/.config/agentguidance → AgentStart's private core plugin
 ```
 
 ## Layout
