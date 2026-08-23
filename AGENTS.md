@@ -41,6 +41,13 @@ copy it once produced (banner-matched, so other tools' skills are untouched).
 whether a human answers mid-run. Keep that fork honest: shared meaning
 belongs in a fragment, not copied into both templates.
 
+`maintain` is doctrine for a kind of repository — a fork workshop such as
+`fxnk` or `zmax` — rather than for a tool, which is why it lives here; the
+one script it ships, `skills/maintain/scripts/reconcile-branches.sh`, is
+the deterministic owner of the fork branch namespace every workshop
+declares, proven by `tests/branch-policy.sh`, and a workshop calls the
+installed copy through a thin entrypoint rather than copying it.
+
 A tool-specific runbook normally lives with its tool, but `notify` and
 `email` wrap `terminal-notifier` and `gog` — third-party binaries with no
 fleet repo to live in, so they live here. That is the whole exception; a
@@ -65,5 +72,5 @@ lives in two siblings, and some changes here must cascade:
 - Adding or removing a call to another fleet tool changes the fleet map:
   update `~/code/agentstart/skills/fleet/MAP.md` (served by the `fleet`
   skill, every edge with evidence) in the same change.
-- General agent doctrine — collab, build, story, the resource skills — is
-  `~/code/agentguidance`; tool-specific runbooks stay here.
+- General agent doctrine — collab, build, maintain, story, the resource
+  skills — is `~/code/agentguidance`; tool-specific runbooks stay here.

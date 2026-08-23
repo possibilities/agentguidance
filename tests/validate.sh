@@ -12,13 +12,23 @@ fail() {
 
 /bin/bash -n scripts/post-sync
 /bin/bash -n tests/validate.sh
+/bin/bash -n skills/maintain/scripts/reconcile-branches.sh
+/bin/bash -n tests/branch-policy.sh
+/bin/bash -n tests/fixtures/race-git.sh
 if command -v shellcheck >/dev/null 2>&1; then
-    shellcheck --shell=bash scripts/post-sync tests/validate.sh
+    shellcheck --shell=bash scripts/post-sync tests/validate.sh \
+        skills/maintain/scripts/reconcile-branches.sh tests/branch-policy.sh \
+        tests/fixtures/race-git.sh
 fi
+
+# The maintain skill ships the shared branch-namespace script; its contract
+# (read-only check, one atomic leased push, quarantine never deletes, both
+# composition models) is proven against throwaway repositories.
+tests/branch-policy.sh
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in build collab email notify orchestrate prompt resource-create resource-update story watch-requests; do
+for skill in build collab email maintain notify orchestrate prompt resource-create resource-update story watch-requests; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
