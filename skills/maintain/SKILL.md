@@ -152,7 +152,10 @@ These hold for every workshop, whatever its spec says:
   the same semantic review.
 - For a substantial repair, conflict resolution, or cross-cutting change,
   obtain an independent adversarial review when another agent is available.
-  Repair every concrete finding or record why it does not apply.
+  Adversarial review means subagents told to refute the work, on a model
+  and at an effort that fit it: a strong model at high effort for subtle
+  correctness, a cheaper one at low effort for a mechanical sweep. Repair
+  every concrete finding or record why it does not apply.
 - Never merge upstream into the previously published integration history and
   never force-update it in place while reconciling; the candidate is a new
   history on current upstream, and the leased rewrite is expected.
@@ -198,6 +201,36 @@ scripts/reconcile-branches.sh --check
 The final check should report only the mirror, the integration branch,
 current carries, preserved open-request heads, and permanent quarantine.
 Do not hand-delete a candidate or any other branch after the cycle.
+
+## Offers
+
+An offer to upstream is a fresh branch cut from current upstream main and
+written as upstream would write it, with no workshop-specific concept in it
+— never a carry head or stack commit moved across. The carried patch and the
+offered patch share a behavior, not a history. `## Upstream` says what is
+offered and how landing is recognized.
+
+Nothing offered is pushed unreviewed. Before the branch that opens a pull
+request goes up, and before any follow-up commit answering review, the
+work gets adversarial review by subagents: independent reviewers told to
+refute it — wrong behavior, a missed race, a regression, poor upstream fit.
+Say which model and effort fit the task: a strong model at high effort for
+subtle correctness on a small diff, a cheaper one at low effort for a
+mechanical sweep. Findings are fixed first; the push comes after.
+
+Every message sent to upstream — opening the request, its body, comments,
+replies to reviewers — is approved by the human first. Two things are
+autonomous: responding to a review with code changes when the required
+change is clear, and, once that is settled and the commits are pushed, a
+recap comment of the form "I responded with commits for X; for Y I did Z
+because W. Ready for another look." Everything else waits for approval.
+
+The branch is pushed to the fork when its request opens, and from then on
+it is an open-request head, preserved as `## Branch model` says. The cycle
+does not tend open offers; `watch-requests` does. When the spec's reading
+says an offer has landed, the matching carried work is retired at the next
+cycle — by reading the upstream code, as `## Reconcile the fork` requires,
+never because the request closed.
 
 ## Maintain the scratchpad
 
