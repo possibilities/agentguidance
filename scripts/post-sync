@@ -1,6 +1,6 @@
 #!/bin/bash
 # The fleet's post-sync hook: AgentStart's sync-skills runs this after shipping
-# the skills/ templates into AgentStart's private core plugin, so the copies are
+# the skills/ templates into AgentStart's default common pack, so the copies are
 # immediately re-rendered against the operator extension prompts. Rendering is
 # the whole job.
 set -euo pipefail

@@ -63,7 +63,7 @@ command -v bun >/dev/null 2>&1 || fail "bun is required to validate the render"
 
 render_home=$(mktemp -d "${TMPDIR:-/tmp}/agentguidance-validate.XXXXXX")
 trap 'rm -rf "$render_home"' EXIT
-rendered_skills="$render_home/.local/share/agentstart/core-marketplace/plugins/agentstart-core/skills"
+rendered_skills="$render_home/.local/share/agentstart/capabilities/packs/common/skills"
 mkdir -p "$render_home/.config/agentguidance"
 printf '## System\n\nvalidate-agentvoice-system-extension\n' \
     >"$render_home/.config/agentguidance/SYSTEM.md"

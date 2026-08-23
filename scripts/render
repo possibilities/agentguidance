@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-// Render the skill templates under skills/ into AgentStart's private core
-// plugin, and the
+// Render the skill templates under skills/ into AgentStart's default common
+// capability pack, and the
 // prompt templates under prompts/<consumer>/ into ~/.agents/prompts/<consumer>/,
 // splicing two kinds of render point:
 //   <!-- fragment: NAME.md -->          repo-owned shared doctrine, from
@@ -41,9 +41,9 @@ const installRoot =
     ".local",
     "share",
     "agentstart",
-    "core-marketplace",
-    "plugins",
-    "agentstart-core",
+    "capabilities",
+    "packs",
+    "common",
     "skills",
   );
 const promptsInstallRoot = join(homedir(), ".agents", "prompts");
