@@ -1,6 +1,6 @@
 ---
 name: maintain
-description: Run one maintenance cycle of a fork the machine carries, from its workshop repository — reconcile current upstream with every behavior the workshop's MAINTAIN.md requires, gate a candidate, publish the integration branch under a lease, hand it to its consumer, and record the state. Use only when the operator explicitly invokes /maintain or asks in their own words to maintain a named fork. Never reach for it because a task would benefit from a cycle: composing one proved carry, gating it, publishing integration, or installing the published tip are the workshop's own steps, not this.
+description: Run one maintenance cycle of a fork the machine carries, from its workshop repository — reconcile current upstream with every behavior the workshop's MAINTAIN.md requires, gate a candidate, publish the integration branch under a lease, hand it to its consumer, and record the state. Use for /maintain or "maintain the <project> fork" from a workshop checkout; installation without maintenance is the workshop's own consumer step, not this.
 disable-model-invocation: true
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: watch-requests
 description: Survey the open pull requests we have sent to upstream repositories — inferred from this machine's checkouts, never a kept list — then, on approval, run a standing watch that keeps each one moving; routing failing CI, reviews, and stale branches back to the session that opened the request, and routing a merge's aftermath to the repository that owns the wiring. Use when asked to check on our PRs, watch or babysit upstream contributions, to recheck what is out there, or when a sent pull request needs tending until merge.
+disable-model-invocation: true
 ---
 
 # Watch requests
