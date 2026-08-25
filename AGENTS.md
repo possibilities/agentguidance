@@ -44,9 +44,10 @@ belongs in a fragment, not copied into both templates.
 `maintain` is doctrine for a kind of repository — a fork workshop such as
 `fxnk` or `zmax` — rather than for a tool, which is why it lives here; the
 one script it ships, `skills/maintain/scripts/reconcile-branches.sh`, is
-the deterministic owner of the fork branch namespace every workshop
-declares, proven by `tests/branch-policy.sh`, and a workshop calls the
-installed copy through a thin entrypoint rather than copying it.
+the deterministic owner of the mirror and carry refs every workshop declares,
+proven by `tests/branch-policy.sh`, and a workshop calls the installed copy
+through a thin entrypoint rather than copying it. Other fork heads are
+reported and left unchanged; `DELETEME/*` is explicit human state.
 
 A tool-specific runbook normally lives with its tool, but `notify` and
 `email` wrap `terminal-notifier` and `gog` — third-party binaries with no

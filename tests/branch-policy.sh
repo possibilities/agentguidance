@@ -156,13 +156,17 @@ printf '%s\n' "$check_output" \
     | grep -F "KEEP-PR #123 pr/open $pr_sha" >/dev/null \
     || fail "--check omitted the open PR head"
 printf '%s\n' "$check_output" \
-    | grep -F "QUARANTINE stale/topic $stale_sha -> DELETEME/stale/topic" \
+    | grep -F "KEEP-OTHER stale/topic $stale_sha" \
         >/dev/null \
-    || fail "--check omitted the quarantine move"
+    || fail "--check omitted an undeclared branch"
 printf '%s\n' "$check_output" \
-    | grep -F "QUARANTINE late/topic $late_sha -> DELETEME/late/topic" \
+    | grep -F "KEEP-OTHER late/topic $late_sha" \
         >/dev/null \
-    || fail "--check omitted a late-created branch"
+    || fail "--check omitted a late-created undeclared branch"
+printf '%s\n' "$check_output" \
+    | grep -F "KEEP-DELETEME DELETEME/already $quarantine_sha" \
+        >/dev/null \
+    || fail "--check omitted an explicit deletion marker"
 
 # A required local-main move is refused while another worktree has main checked
 # out, before any fork ref is changed.
@@ -215,32 +219,6 @@ after_pr_race=$(git --git-dir="$fork_repo" for-each-ref \
     || fail "open-PR inventory refusal changed fork refs"
 printf 'pr/open\t%s\t123\n' "$pr_sha" >"$open_pr_heads"
 
-# When a matching quarantine target already exists, a concurrent change to that
-# target aborts before the preserved source can be removed.
-target_race_lock="$test_root/target-race-lock"
-set +e
-target_race_output=$(
-    PATH="$race_bin:$PATH" \
-    MAINTAIN_REAL_GIT="$real_git" \
-    MAINTAIN_RACE_LOCK="$target_race_lock" \
-    MAINTAIN_RACE_REPO="$fork_repo" \
-    MAINTAIN_RACE_REF=refs/heads/DELETEME/already \
-    MAINTAIN_RACE_SHA="$pr_sha" \
-    run_policy --apply 2>&1
-)
-target_race_status=$?
-set -e
-[ "$target_race_status" -ne 0 ] \
-    || fail "accepted a stale quarantine-target lease"
-printf '%s\n' "$target_race_output" \
-    | grep -F 'could not atomically apply the fork branch policy' >/dev/null \
-    || fail "did not explain the quarantine-target lease refusal"
-assert_ref already "$quarantine_sha"
-assert_ref DELETEME/already "$pr_sha"
-assert_missing_ref carry/alpha
-git --git-dir="$fork_repo" update-ref \
-    refs/heads/DELETEME/already "$quarantine_sha"
-
 # A concurrent main update after inventory trips the exact lease and leaves the
 # whole core-and-carry atomic push unapplied.
 race_lock="$test_root/race-lock"
@@ -271,24 +249,23 @@ assert_ref main "$upstream_main_sha"
 assert_ref integration "$integration_sha"
 assert_ref carry/alpha "$carry_sha"
 assert_ref pr/open "$pr_sha"
-assert_ref DELETEME/stale/topic "$stale_sha"
-assert_ref DELETEME/late/topic "$late_sha"
+assert_ref stale/topic "$stale_sha"
+assert_ref late/topic "$late_sha"
+assert_ref already "$quarantine_sha"
 assert_ref DELETEME/already "$quarantine_sha"
-assert_missing_ref stale/topic
-assert_missing_ref late/topic
-assert_missing_ref already
 expected_heads=$(printf '%s\n' \
+    already \
     DELETEME/already \
-    DELETEME/late/topic \
-    DELETEME/stale/topic \
     carry/alpha \
     integration \
+    late/topic \
     main \
-    pr/open | LC_ALL=C sort)
+    pr/open \
+    stale/topic | LC_ALL=C sort)
 actual_heads=$(git --git-dir="$fork_repo" for-each-ref \
     --format='%(refname:strip=2)' refs/heads | LC_ALL=C sort)
 [ "$actual_heads" = "$expected_heads" ] \
-    || fail "fork retained an unexplained live head"
+    || fail "fork changed an undeclared head"
 
 [ "$(git -C "$checkout" rev-parse main)" = "$upstream_main_sha" ] \
     || fail "local main was not fast-forwarded"
@@ -340,19 +317,20 @@ printf '%s\n' "$bad_pr_output" \
 printf 'pr/open\t%s\t123\n' "$pr_sha" >"$open_pr_heads"
 assert_ref pr/open "$pr_sha"
 
-# A quarantine-name collision preserves both source refs and aborts.
+# An ordinary branch and an explicit deletion marker may coexist. Reconciliation
+# reports and preserves both because neither is an inferred transition.
 git --git-dir="$fork_repo" update-ref refs/heads/collision "$stale_sha"
 git --git-dir="$fork_repo" update-ref refs/heads/DELETEME/collision "$pr_sha"
-set +e
-collision_output=$(run_policy --check 2>&1)
-collision_status=$?
-set -e
-[ "$collision_status" -ne 0 ] \
-    || fail "accepted a conflicting quarantine target"
+collision_output=$(run_policy --check)
 printf '%s\n' "$collision_output" \
-    | grep -F 'quarantine target DELETEME/collision already names another commit' \
+    | grep -F "KEEP-OTHER collision $stale_sha" \
         >/dev/null \
-    || fail "did not explain the quarantine collision"
+    || fail "did not report the ordinary collision branch"
+printf '%s\n' "$collision_output" \
+    | grep -F "KEEP-DELETEME DELETEME/collision $pr_sha" \
+        >/dev/null \
+    || fail "did not report the explicit deletion marker"
+run_policy --apply >/dev/null
 assert_ref collision "$stale_sha"
 assert_ref DELETEME/collision "$pr_sha"
 git --git-dir="$fork_repo" update-ref -d refs/heads/collision
@@ -370,9 +348,8 @@ printf '%s\n' "$diverged_output" \
     || fail "did not explain the diverged fork main"
 git --git-dir="$fork_repo" update-ref refs/heads/main "$upstream_main_sha"
 
-# The linear-stack model: no carry prefix and no preserved pull-request
-# heads. Every head but the mirror, integration, and quarantine is moved —
-# including a carry-named one and the former open-PR head.
+# The linear-stack model publishes no carries and validates no pull-request
+# heads. Carry-named, former-request, and offer branches all remain unchanged.
 linear_fork="$test_root/linear-fork.git"
 linear_checkout="$test_root/linear-checkout"
 git clone --quiet --bare "$fork_repo" "$linear_fork"
@@ -388,14 +365,14 @@ linear_output=$(
     bash "$script" --check
 )
 printf '%s\n' "$linear_output" \
-    | grep -F "QUARANTINE carry/alpha $carry_sha -> DELETEME/carry/alpha" >/dev/null \
-    || fail "linear model kept a carry-named head"
+    | grep -F "KEEP-OTHER carry/alpha $carry_sha" >/dev/null \
+    || fail "linear model omitted a carry-named ordinary head"
 printf '%s\n' "$linear_output" \
-    | grep -F "QUARANTINE pr/open $pr_sha -> DELETEME/pr/open" >/dev/null \
-    || fail "linear model kept a pull-request head"
+    | grep -F "KEEP-OTHER pr/open $pr_sha" >/dev/null \
+    || fail "linear model omitted a former pull-request head"
 printf '%s\n' "$linear_output" \
-    | grep -F "QUARANTINE offer/fix $pr_sha -> DELETEME/offer/fix" >/dev/null \
-    || fail "linear model kept an offered branch"
+    | grep -F "KEEP-OTHER offer/fix $pr_sha" >/dev/null \
+    || fail "linear model omitted an offered branch"
 if printf '%s\n' "$linear_output" | grep -E '^(PUBLISH|KEEP-PR)' >/dev/null; then
     fail "linear model published a carry or froze a pull-request head"
 fi
@@ -407,16 +384,17 @@ MAINTAIN_PRESERVE_OPEN_PRS=0 \
 linear_heads=$(git --git-dir="$linear_fork" for-each-ref \
     --format='%(refname:strip=2)' refs/heads | LC_ALL=C sort)
 expected_linear=$(printf '%s\n' \
+    already \
     DELETEME/already \
-    DELETEME/carry/alpha \
-    DELETEME/late/topic \
-    DELETEME/offer/fix \
-    DELETEME/pr/open \
-    DELETEME/stale/topic \
+    carry/alpha \
     integration \
-    main | LC_ALL=C sort)
+    late/topic \
+    main \
+    offer/fix \
+    pr/open \
+    stale/topic | LC_ALL=C sort)
 [ "$linear_heads" = "$expected_linear" ] \
-    || fail "linear model left an unexplained live head: $linear_heads"
+    || fail "linear model changed an undeclared head: $linear_heads"
 
 # Declared names are validated before anything is read.
 set +e

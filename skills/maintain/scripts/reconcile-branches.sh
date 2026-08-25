@@ -15,7 +15,9 @@ set -euo pipefail
 #   MAINTAIN_INTEGRATION_BRANCH  the published build source (default: integration)
 #   MAINTAIN_CARRY_PREFIX        carried-feature branch prefix (default: carry/;
 #                                empty for a linear stack with no carry heads)
-#   MAINTAIN_QUARANTINE_PREFIX   where other heads are moved (default: DELETEME/)
+#   MAINTAIN_QUARANTINE_PREFIX   explicit deletion-marker namespace
+#                                (default: DELETEME/); reconciliation reports
+#                                these heads but never creates or removes them
 #   MAINTAIN_PRESERVE_OPEN_PRS   1 to freeze the exact heads of open upstream
 #                                pull requests from the fork (default: 1)
 #   MAINTAIN_OPEN_PR_HEADS_FILE  a fixture replacing the GitHub query (tests)
@@ -118,7 +120,6 @@ scratch_root=$(mktemp -d "${TMPDIR:-/tmp}/maintain-branches.XXXXXX")
 remote_heads="$scratch_root/remote-heads"
 open_pr_heads="$scratch_root/open-pr-heads"
 local_carries="$scratch_root/local-carries"
-quarantine_plan="$scratch_root/quarantine-plan"
 open_pr_heads_recheck="$scratch_root/open-pr-heads-recheck"
 snapshot_repo="$scratch_root/snapshot.git"
 
@@ -238,31 +239,6 @@ while IFS=$'\t' read -r branch sha; do
         || die "$branch is not included in $fork_remote/$integration_branch"
 done <"$local_carries"
 
-: >"$quarantine_plan"
-# lookup_sha opens the same immutable snapshot independently; neither reader
-# writes it. ShellCheck otherwise mistakes the nested read for a pipeline race.
-# shellcheck disable=SC2094
-while IFS=$'\t' read -r branch sha; do
-    [ -n "$branch" ] || continue
-    if [ "$branch" = "$main_branch" ] || [ "$branch" = "$integration_branch" ] \
-        || is_quarantined "$branch"; then
-        continue
-    elif is_carry "$branch"; then
-        if has_branch "$local_carries" "$branch"; then
-            continue
-        fi
-    elif has_branch "$open_pr_heads" "$branch"; then
-        continue
-    fi
-    target="$quarantine_prefix$branch"
-    if target_sha=$(lookup_sha "$remote_heads" "$target" 2>/dev/null); then
-        [ "$target_sha" = "$sha" ] \
-            || die "quarantine target $target already names another commit"
-    fi
-    printf '%s\t%s\t%s\n' "$branch" "$sha" "$target" \
-        >>"$quarantine_plan"
-done <"$remote_heads"
-
 printf 'MAIN %s %s -> %s\n' "$main_branch" "$fork_main_sha" "$origin_main_sha"
 printf 'KEEP %s %s\n' "$integration_branch" "$integration_sha"
 while IFS=$'\t' read -r branch sha; do
@@ -280,13 +256,19 @@ done <"$open_pr_heads"
 while IFS=$'\t' read -r branch sha; do
     [ -n "$branch" ] || continue
     if is_quarantined "$branch"; then
-        printf 'KEEP-QUARANTINE %s %s\n' "$branch" "$sha"
+        printf 'KEEP-DELETEME %s %s\n' "$branch" "$sha"
     fi
 done <"$remote_heads"
-while IFS=$'\t' read -r branch sha target; do
+while IFS=$'\t' read -r branch sha; do
     [ -n "$branch" ] || continue
-    printf 'QUARANTINE %s %s -> %s\n' "$branch" "$sha" "$target"
-done <"$quarantine_plan"
+    if [ "$branch" = "$main_branch" ] || [ "$branch" = "$integration_branch" ] \
+        || is_quarantined "$branch" \
+        || has_branch "$local_carries" "$branch" \
+        || has_branch "$open_pr_heads" "$branch"; then
+        continue
+    fi
+    printf 'KEEP-OTHER %s %s\n' "$branch" "$sha"
+done <"$remote_heads"
 
 [ "$mode" = apply ] || exit 0
 
@@ -315,19 +297,6 @@ while IFS=$'\t' read -r branch sha; do
     fi
     refspecs+=("$sha:refs/heads/$branch")
 done <"$local_carries"
-while IFS=$'\t' read -r branch sha target; do
-    [ -n "$branch" ] || continue
-    leases+=("--force-with-lease=refs/heads/$branch:$sha")
-    if target_sha=$(lookup_sha "$remote_heads" "$target" 2>/dev/null); then
-        leases+=("--force-with-lease=refs/heads/$target:$target_sha")
-        refspecs+=("$target_sha:refs/heads/$target")
-    else
-        leases+=("--force-with-lease=refs/heads/$target:")
-        refspecs+=("$sha:refs/heads/$target")
-    fi
-    refspecs+=(":refs/heads/$branch")
-done <"$quarantine_plan"
-
 git --git-dir="$snapshot_repo" push --quiet --atomic \
     "${leases[@]}" "$fork_url" "${refspecs[@]}" \
     || die "could not atomically apply the fork branch policy"
@@ -354,5 +323,5 @@ while IFS=$'\t' read -r branch sha; do
     git -C "$checkout" config "branch.$branch.pushRemote" "$fork_remote"
 done <"$local_carries"
 
-printf 'Applied the branch model: %s mirrored, carries published, other heads quarantined under %s.\n' \
-    "$main_branch" "$quarantine_prefix"
+printf 'Applied the branch model: %s mirrored and declared carries published; all other heads were left unchanged.\n' \
+    "$main_branch"

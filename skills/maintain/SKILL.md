@@ -41,7 +41,7 @@ Three files, one job each:
 | --- | --- |
 | `## Purpose` | What the fork is for and what it is not. |
 | `## Upstream` | The bound checkout, the `fork` and upstream remotes with their repositories, the upstream's contribution conventions and what they mean for us, what we offer upstream and how "landed" is recognized. |
-| `## Branch model` | The mirror branch, the integration branch, the composition model — `carry/<feature>` heads composed onto upstream, or one linear stack rebased whole — the quarantine prefix, whether open pull-request heads are preserved, and whether rerere is relied on. |
+| `## Branch model` | The mirror branch, the integration branch, the composition model — `carry/<feature>` heads composed onto upstream, or one linear stack rebased whole — the explicit deletion-marker prefix, whether open pull-request heads are validated, and whether rerere is relied on. |
 | `## Features` | The inventory: every behavior the fork must carry, as behavior, with its scope line. Absence is work, never a status note. |
 | `## Gate` | The exact commands, fenced, run verbatim from the candidate worktree, and any external proof (hosted CI, a ship gate) the publication requires. |
 | `## Consumer` | Who consumes the published integration branch and the command that hands it over — an installer, a pin, a rebuild. |
@@ -70,25 +70,25 @@ These hold for every workshop, whatever its spec says:
   over.
 - Upstream pull requests, issues, and their branches are evidence only —
   never live dependencies, publication targets, or work queues — and the
-  cycle never mutates them. An open request's exact head is preserved on
-  the fork, when the spec says so, only while it is open.
-- The fork's branch namespace is owned completely: the only live heads are
-  the mirror, the integration branch, the current carry heads (under the
-  carry model), and preserved open-request heads. Every other head is moved
-  at the same commit to the quarantine prefix, never deleted; quarantine is
-  permanent and a name collision is a hard refusal. `reconcile-branches.sh`
-  is the deterministic owner of this policy: `--check` is read-only and
-  works from a disposable snapshot, `--apply` pushes the whole plan in one
-  atomic, exact-leased push. Never reproduce its mutation by hand.
+  cycle never mutates them. When the spec says so, reconciliation validates
+  an open request's exact head while it remains open; closing it does not
+  authorize changing or deleting the branch.
+- Reconciliation owns only the refs the workshop declares: the mirror, the
+  integration branch, and current carry heads under the carry model. Every
+  other fork head is left unchanged. A `DELETEME/<original>` head records an
+  explicit human decision about that branch; maintenance reports it but never
+  creates, moves, or removes it implicitly. `reconcile-branches.sh --check` is
+  read-only and works from a disposable snapshot; `--apply` publishes the
+  declared refs in one atomic, exact-leased push.
 - Carried work must be an ancestor of the published integration branch —
   every carry head under the carry model, every stack commit under the
   linear model.
 - A recorded rerere resolution, where the spec relies on rerere, is
   evidence, not proof: after upstream changes, reread the affected behavior
   before accepting it.
-- Reconciliation runs again after the hand-over, so the cycle's temporary
-  candidate branch is quarantined and the fork ends with no unexplained
-  live head.
+- Reconciliation runs again after the hand-over so the mirror and declared
+  carry heads agree with the completed cycle. Temporary or obsolete branches
+  remain until a human explicitly decides their disposition.
 
 ## Establish the state
 
@@ -119,11 +119,8 @@ These hold for every workshop, whatever its spec says:
    scripts/reconcile-branches.sh --apply
    ```
 
-   Stop on any divergence, a missing or moved preserved head, a carry
-   outside integration, a quarantine collision, a lease failure, or an
-   unexpected remote identity. Before the first live apply on a fork, look
-   at what the fork's hosted CI (if any) triggers on branch creation:
-   quarantine creates heads.
+   Stop on any divergence, a missing or moved validated head, a carry outside
+   integration, a lease failure, or an unexpected remote identity.
 4. Fetch both remotes. Compare upstream and integration with the last
    completed baseline in the scratchpad. Read every upstream commit in that
    interval, grouping related changes before deciding whether they affect a
@@ -199,9 +196,9 @@ scripts/reconcile-branches.sh --apply
 scripts/reconcile-branches.sh --check
 ```
 
-The final check should report only the mirror, the integration branch,
-current carries, preserved open-request heads, and permanent quarantine.
-Do not hand-delete a candidate or any other branch after the cycle.
+The final check reports the mirror, Integration, current carries, validated
+open-request heads, explicit `DELETEME/*` markers, and every other untouched
+fork head. Do not infer that an unrecognized head is obsolete.
 
 ## Offers
 
@@ -248,9 +245,8 @@ Update `SCRATCHPAD.md` during the cycle, not as an afterthought:
 - retain rerere or conflict context only while it can change a later
   decision;
 - remove superseded state and append one compact dated history entry;
-- record the final branch reconciliation and the candidate's quarantine
-  name; do not list every permanent quarantine head unless one affects
-  maintenance.
+- record the final branch reconciliation; list an explicit `DELETEME/*` marker
+  only when it affects maintenance.
 
 Do not duplicate the spec's feature inventory, paste command logs, or store
 secrets. Commit and push scratchpad changes on the workshop's main branch

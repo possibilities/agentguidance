@@ -22,7 +22,7 @@ if command -v shellcheck >/dev/null 2>&1; then
 fi
 
 # The maintain skill ships the shared branch-namespace script; its contract
-# (read-only check, one atomic leased push, quarantine never deletes, both
+# (read-only check, one atomic leased push, undeclared refs unchanged, both
 # composition models) is proven against throwaway repositories.
 tests/branch-policy.sh
 
