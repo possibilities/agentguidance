@@ -1,6 +1,7 @@
 ---
 name: resource-update
 description: Resume a resource under ~/resources — re-run its recorded queries, show a diff of what changed since it was built, and refresh its documents, report, and seam on approval.
+disable-model-invocation: true
 ---
 
 # Resource Update

@@ -1,6 +1,7 @@
 ---
 name: build
 description: Execute a brief to done with no one to ask — classify it, sketch substantial work, approve the sketch yourself and build, stopping only to explain a genuine blocker. For dispatched briefs and runs where no human is available mid-task.
+disable-model-invocation: true
 ---
 
 # Build

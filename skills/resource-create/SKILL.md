@@ -1,6 +1,7 @@
 ---
 name: resource-create
 description: Turn research — an agentbrain search, a session's findings, a set of links — into a durable resource directory under ~/resources with a seam, a report, full source documents, and a manifest.
+disable-model-invocation: true
 ---
 
 # Resource Create

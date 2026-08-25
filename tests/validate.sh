@@ -34,6 +34,22 @@ for skill in build collab email maintain notify orchestrate prompt resource-crea
     [ -f "skills/$skill/agents/openai.yaml" ] \
         || fail "skill manifest is missing: skills/$skill/agents/openai.yaml"
 done
+# Model invocability is one portable fact in SKILL.md. AgentStart renders the
+# inverse OpenAI field into its copied common pack; keeping that product field
+# here would create the second source of truth this contract removes.
+if grep -H '^  allow_implicit_invocation:' skills/*/agents/openai.yaml; then
+    fail "source OpenAI manifests contain rendered invocation policy"
+fi
+explicit_model_skills=$(
+    for skill_file in skills/*/SKILL.md; do
+        grep -q '^disable-model-invocation: true$' "$skill_file" || continue
+        skill_dir=${skill_file%/SKILL.md}
+        printf '%s\n' "${skill_dir##*/}"
+    done | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'
+)
+[ "$explicit_model_skills" = \
+    "build maintain orchestrate resource-create resource-update watch-requests" ] \
+    || fail "explicit-only skill policy drifted: $explicit_model_skills"
 # The resource skills document their schema as living beside them; the
 # update side carries it as a symlink so there is exactly one source.
 for manifest_skill in resource-create resource-update; do

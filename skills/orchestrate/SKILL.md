@@ -1,6 +1,7 @@
 ---
 name: orchestrate
 description: Conduct a session as the control plane over dispatched workers — classify each request, collaborate per the collab contract on the thread, and send execution outward as standalone briefs run under the build contract. A posture over collab and build, not a replacement for either.
+disable-model-invocation: true
 ---
 
 # Orchestrate

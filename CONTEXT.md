@@ -41,6 +41,12 @@ it execs the render; the name is the fleet convention, the render is this
 repo's use of it.
 _Avoid_: build step, postinstall.
 
+**Model invocation policy** — the portable fact recorded by
+`disable-model-invocation` in a skill template's `SKILL.md` frontmatter;
+absent or false means model-invocable. AgentStart derives Codex's inverse
+product field when it renders the common capability pack.
+_Avoid_: OpenAI policy (that is a rendered representation, not source).
+
 **Orchestrator tools** — the section `fragments/orchestrator-tools.md`
 renders into the orchestrator renditions only (the orchestrate skill and
 agentvoice's ORCHESTRATOR.md): advertisement lines for skills of the

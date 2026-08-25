@@ -67,7 +67,10 @@ lives in two siblings, and some changes here must cascade:
   by the scheduled updater). AgentLaunch composes the pack into managed
   sessions: Claude Code exposes `/agent:<name>`, while Codex uses `$<name>`
   and Pi uses `/<name>`. A SKILL.md edit is live within six hours, or on
-  demand by running that script. Whether a new skill earns a TOOLS.md
+  demand by running that script. Model invocability is declared only by
+  `disable-model-invocation` in SKILL.md; AgentStart derives Codex's inverse
+  `allow_implicit_invocation`, so never maintain that field in source.
+  Whether a new skill earns a TOOLS.md
   advertisement line is a deliberate decision —
   `agentwiki get tool-advertisement-policy`.
 - Adding or removing a call to another fleet tool changes the fleet map:
