@@ -83,6 +83,8 @@ rendered_skills="$render_home/.local/share/agentstart/capabilities/packs/common/
 mkdir -p "$render_home/.config/agentguidance"
 printf '## System\n\nvalidate-agentvoice-system-extension\n' \
     >"$render_home/.config/agentguidance/SYSTEM.md"
+printf '## Guidelines\n\ngh gist create FILE --desc "…" --web\n\ngh gist view GIST_ID --web\n' \
+    >"$render_home/.config/agentguidance/GUIDELINES.md"
 printf '## Tools\n\nvalidate-extension-splice\n' \
     >"$render_home/.config/agentguidance/TOOLS.md"
 mkdir -p "$rendered_skills/retired-validate"
@@ -111,6 +113,17 @@ grep -F 'validate-extension-splice' "$rendered" >/dev/null \
     || fail "the rendered resource-update manifest symlink does not resolve"
 [ ! -e "$rendered_skills/retired-validate" ] \
     || fail "the render did not prune a retired skill it once produced"
+
+# Operator publication guidance must survive the shared render into every
+# skill that consumes GUIDELINES.md; those skills are projected to Codex,
+# Claude, and Pi from the same common pack.
+for guided_skill in build collab maintain orchestrate; do
+    rendered_guided_skill="$rendered_skills/$guided_skill/SKILL.md"
+    grep -F 'gh gist create FILE --desc "…" --web' "$rendered_guided_skill" >/dev/null \
+        || fail "the rendered $guided_skill skill omits Gist create-and-open guidance"
+    grep -F 'gh gist view GIST_ID --web' "$rendered_guided_skill" >/dev/null \
+        || fail "the rendered $guided_skill skill omits existing-Gist open guidance"
+done
 
 # Shared-checkout safety is build doctrine, not a harness-specific warning.
 # It must render identically into both human-loop and unattended workers.
