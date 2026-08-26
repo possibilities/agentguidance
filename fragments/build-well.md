@@ -33,3 +33,24 @@ Prefer `git apply --check` (for a reverse check, pipe the commit patch to
 `git apply -R --check`). When Git's three-way behavior itself must be tested,
 use a disposable clone or scratch worktree. Never probe by changing a shared
 checkout and then trying to restore it.
+
+A machine has a finite process table, and a shell that cannot fork is a shell
+you cannot recover from — the human reboots. Never spawn a heavyweight runtime
+per iteration of a loop: a `bun`, `node`, or `python` invocation that loads a
+project's dependencies costs many processes and threads, so calling one six
+times to read a status is six times the cost of reading it once. Poll with a
+single long-lived wait, or with single-shot reads spaced by one, and reuse an
+open socket or file over a fresh process wherever the tool offers it.
+
+Reap what you start. Daemons designed to outlive their parent — a terminal
+multiplexer's session host, a PTY server, anything a test suite starts to
+prove processes survive — accumulate silently across repeated runs, because
+surviving is exactly what they are built to do. After a suite that starts
+them, list and kill what it left. Do not leave an agent parked on a prompt
+nobody will answer, holding its processes open while you work on something
+else.
+
+`fork failed: resource temporarily unavailable`, `EAGAIN`, and
+`Resource temporarily unavailable` mean the limit is already reached. Stop
+immediately and say so — do not retry, and do not run cleanup that itself
+needs to fork. Retrying is what turns a recoverable moment into a reboot.
