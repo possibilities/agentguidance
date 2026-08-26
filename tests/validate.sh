@@ -112,6 +112,18 @@ grep -F 'validate-extension-splice' "$rendered" >/dev/null \
 [ ! -e "$rendered_skills/retired-validate" ] \
     || fail "the render did not prune a retired skill it once produced"
 
+# Shared-checkout safety is build doctrine, not a harness-specific warning.
+# It must render identically into both human-loop and unattended workers.
+for worker in collab build; do
+    rendered_worker="$rendered_skills/$worker/SKILL.md"
+    grep -F 'Shared checkouts are concurrent state.' "$rendered_worker" >/dev/null \
+        || fail "the rendered $worker skill is missing shared-checkout safety"
+    grep -F 'git reset --hard' "$rendered_worker" >/dev/null \
+        || fail "the rendered $worker skill omits named discard commands"
+    grep -F 'git apply -R --check' "$rendered_worker" >/dev/null \
+        || fail "the rendered $worker skill omits the read-only reverse probe"
+done
+
 # The orchestrator-only tools section renders into the orchestrator
 # renditions and nowhere else: that advertisement scoping is the design, so
 # its presence on both renditions and absence from a worker skill are
