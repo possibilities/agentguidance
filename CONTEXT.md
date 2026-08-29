@@ -48,16 +48,14 @@ product field when it renders the common capability pack.
 _Avoid_: OpenAI policy (that is a rendered representation, not source).
 
 **Orchestrator tools** — the section `fragments/orchestrator-tools.md`
-renders into the orchestrator renditions only (the orchestrate skill and
-agentvoice's ORCHESTRATOR.md): advertisement lines for skills of the
-orchestrator's own craft, `prompt` first. Scoping is by advertisement —
-every harness can still load the skill — not enforcement.
+renders into the orchestrate skill: advertisement lines for skills of the
+orchestrator's own craft, `prompt` first. Scoping is by advertisement — every
+harness can still load the skill — not enforcement.
 _Avoid_: orchestrator skills section, private tools.
 
 **Orchestrator rendition** — a render target that carries the orchestrator
-doctrine: the orchestrate skill for chat, agentvoice's ORCHESTRATOR.md for
-voice. Formerly "orchestrator surfaces", renamed when Surface came to mean
-the worker runtime.
+doctrine. The orchestrate skill is the sole rendition. Formerly "orchestrator
+surfaces", renamed when Surface came to mean the worker runtime.
 _Avoid_: orchestrator surface.
 
 **Surface** — the shared runtime coding-agent workers are placed on and

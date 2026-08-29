@@ -81,7 +81,7 @@ render_home=$(mktemp -d "${TMPDIR:-/tmp}/agentguidance-validate.XXXXXX")
 trap 'rm -rf "$render_home"' EXIT
 rendered_skills="$render_home/.local/share/agentstart/capabilities/packs/common/skills"
 mkdir -p "$render_home/.config/agentguidance"
-printf '## System\n\nvalidate-agentvoice-system-extension\n' \
+printf '## System\n\nvalidate-system-extension\n' \
     >"$render_home/.config/agentguidance/SYSTEM.md"
 printf '## Guidelines\n\ngh gist create FILE --desc "…" --web\n\ngh gist view GIST_ID --web\n' \
     >"$render_home/.config/agentguidance/GUIDELINES.md"
@@ -90,10 +90,6 @@ printf '## Tools\n\nvalidate-extension-splice\n' \
 mkdir -p "$rendered_skills/retired-validate"
 printf '<!-- Rendered from %s/skills/retired-validate/SKILL.md — do not edit; change the template or extension prompts and re-run scripts/render. -->\nstale\n' \
     "$root" >"$rendered_skills/retired-validate/SKILL.md"
-mkdir -p "$render_home/.agents/prompts/agentvoice"
-printf '<!-- Rendered from %s/prompts/agentvoice/RETIRED_VALIDATE.md — do not edit; change the template or extension prompts and re-run scripts/render. -->\nstale\n' \
-    "$root" >"$render_home/.agents/prompts/agentvoice/RETIRED_VALIDATE.md"
-
 HOME="$render_home" scripts/render >/dev/null \
     || fail "the render failed against a fixture HOME"
 
@@ -138,9 +134,8 @@ for worker in collab build; do
 done
 
 # The orchestrator-only tools section renders into the orchestrator
-# renditions and nowhere else: that advertisement scoping is the design, so
-# its presence on both renditions and absence from a worker skill are
-# asserted.
+# rendition and nowhere else: that advertisement scoping is the design, so
+# its presence there and absence from a worker skill are asserted.
 rendered_orchestrate="$rendered_skills/orchestrate/SKILL.md"
 grep -F 'help me steer that agent' "$rendered_orchestrate" >/dev/null \
     || fail "the rendered orchestrate skill is missing the orchestrator tools splice"
@@ -149,8 +144,8 @@ if grep -F 'help me steer that agent' "$rendered" >/dev/null; then
 fi
 
 # The surface doctrine is orchestrator conduct: the two-lane rule rides the
-# shared fragment into both renditions, each rendition binds herdr as the
-# surface by name, and none of it reaches a worker skill.
+# shared fragment into the rendition, which binds herdr as the surface by
+# name, and none of it reaches a worker skill.
 grep -F 'placed on the surface' "$rendered_orchestrate" >/dev/null \
     || fail "the rendered orchestrate skill is missing the surface doctrine"
 grep -F 'The surface is herdr' "$rendered_orchestrate" >/dev/null \
@@ -158,39 +153,5 @@ grep -F 'The surface is herdr' "$rendered_orchestrate" >/dev/null \
 if grep -F 'placed on the surface' "$rendered" >/dev/null; then
     fail "the surface doctrine leaked into a worker skill"
 fi
-
-# The prompt templates render the same way: banner-stamped, fully spliced,
-# read-only, and pruned when the template is gone.
-rendered_prompt="$render_home/.agents/prompts/agentvoice/ORCHESTRATOR.md"
-[ -f "$rendered_prompt" ] \
-    || fail "the render did not install the agentvoice orchestrator prompt"
-grep -F "Rendered from $root/prompts/agentvoice/ORCHESTRATOR.md" "$rendered_prompt" >/dev/null \
-    || fail "the rendered prompt is missing its provenance banner"
-if grep -E '<!-- (fragment|extension-prompt):' "$rendered_prompt" >/dev/null; then
-    fail "the rendered prompt still contains raw render points"
-fi
-grep -F 'the conversation is yours' "$rendered_prompt" >/dev/null \
-    || fail "the rendered prompt did not splice the orchestrator conduct fragment"
-for source_grounding_rule in \
-    'inspect the relevant source' \
-    'Separate what the code establishes from what you infer.' \
-    "user's observation as something to verify" \
-    'If you have not verified a claim, say so explicitly.'; do
-    grep -F "$source_grounding_rule" "$rendered_prompt" >/dev/null \
-        || fail "the rendered prompt is missing source-grounding doctrine: $source_grounding_rule"
-done
-grep -F 'validate-agentvoice-system-extension' "$rendered_prompt" >/dev/null \
-    || fail "the rendered prompt did not splice the SYSTEM.md extension prompt"
-grep -F 'help me steer that agent' "$rendered_prompt" >/dev/null \
-    || fail "the rendered prompt is missing the orchestrator tools splice"
-grep -F 'placed on the surface' "$rendered_prompt" >/dev/null \
-    || fail "the rendered prompt is missing the surface doctrine"
-grep -F 'The surface is herdr' "$rendered_prompt" >/dev/null \
-    || fail "the rendered prompt does not bind herdr as the surface"
-grep -F 'surface-report turn' "$rendered_prompt" >/dev/null \
-    || fail "the rendered prompt does not name the surface wake"
-[ ! -w "$rendered_prompt" ] || fail "the rendered prompt is not read-only"
-[ ! -e "$render_home/.agents/prompts/agentvoice/RETIRED_VALIDATE.md" ] \
-    || fail "the render did not prune a retired prompt it once produced"
 
 printf 'ok\n'
