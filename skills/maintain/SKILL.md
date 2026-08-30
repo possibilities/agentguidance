@@ -27,10 +27,12 @@ Three files, one job each:
   tracks and how we relate to it, the branch model, the feature inventory
   that must remain true, the gate, the consumer, and how to notify. This is
   the contract the cycle executes.
-- `SCRATCHPAD.md` — current state: the last completed baseline, one entry per
-  carried feature, notes that can change a later decision, a compact dated
+- `SCRATCHPAD.md` — current state: the delivered upstream and integration
+  baseline, the separately named audited-upstream frontier, one entry per
+  carried feature, notes that can change a later decision, and a compact dated
   history. Updated during the cycle, never a second specification or an
-  unbounded transcript.
+  unbounded transcript. Delivery work may advance the first baseline; only a
+  complete maintenance audit advances the frontier.
 - `scripts/` — the workshop's thin entrypoints: `reconcile-branches.sh`
   exporting the declared branch model into this skill's shared script, the
   gate runner, and the consumer command.
@@ -86,6 +88,12 @@ These hold for every workshop, whatever its spec says:
 - A recorded rerere resolution, where the spec relies on rerere, is
   evidence, not proof: after upstream changes, reread the affected behavior
   before accepting it.
+- The audited-upstream frontier is not the upstream commit underlying the
+  currently delivered Integration branch. Feature work between maintenance
+  cycles may replay and publish the fork on newer upstream, but that does not
+  prove every intervening upstream commit was considered as a replacement for
+  every carried feature. Never advance the frontier from a feature delivery,
+  a clean replay, or a green gate.
 - Reconciliation runs again after the hand-over so the mirror and declared
   carry heads agree with the completed cycle. Temporary or obsolete branches
   remain until a human explicitly decides their disposition.
@@ -121,14 +129,25 @@ These hold for every workshop, whatever its spec says:
 
    Stop on any divergence, a missing or moved validated head, a carry outside
    integration, a lease failure, or an unexpected remote identity.
-4. Fetch both remotes. Compare upstream and integration with the last
-   completed baseline in the scratchpad. Read every upstream commit in that
-   interval, grouping related changes before deciding whether they affect a
-   carried feature.
-5. For each carried feature, inspect current upstream code and any
-   historical upstream reference in the scratchpad for a replacement or an
-   interaction. Evidence only: do not rebase or push their branches, or
-   comment on, label, close, or edit the requests.
+4. Fetch both remotes. Read two distinct facts from the scratchpad: the
+   delivered baseline, which says what the consumer currently runs, and the
+   audited-upstream frontier, which is the exact upstream commit through which
+   the last complete maintenance audit assigned every carried feature a
+   disposition. Set the audit interval from that frontier to current upstream,
+   even when some or all of those commits are already in Integration because
+   intervening feature work replayed the fork. Read every upstream commit in
+   that aggregate interval and group related changes before judging features.
+   If an older scratchpad does not name a frontier separately, reconstruct it
+   from the last completed maintenance entry and repository history; do not
+   silently substitute the newer delivered baseline. Record the migration.
+5. For each carried feature, inspect current upstream code and any historical
+   upstream reference in the scratchpad, then assign exactly one disposition:
+   retire because upstream now satisfies the contract; repair because the
+   feature remains carried but upstream interacts with it; or keep unchanged
+   because upstream neither replaces nor affects it. A replay or conflict list
+   is not this semantic review. Keep the disposition ledger until the
+   scratchpad and final report carry its result. Evidence only: do not rebase
+   or push historical branches, or comment on, label, close, or edit requests.
 
 ## Reconcile the fork
 
@@ -234,8 +253,12 @@ never because the request closed.
 
 Update `SCRATCHPAD.md` during the cycle, not as an afterthought:
 
-- replace the completed baseline with the exact upstream and integration
-  SHAs, and whatever the consumer recorded (a receipt, a pin);
+- replace the delivered baseline with the exact upstream and integration SHAs,
+  and whatever the consumer recorded (a receipt, a pin);
+- keep a separately named audited-upstream frontier with its exact SHA and
+  completion date. Advance it only after every commit since the prior frontier
+  was read and every carried feature received a disposition; an incomplete
+  audit leaves the old frontier intact even if delivery moved;
 - keep one current entry per carried feature: where it lives (carry head or
   stack commits), its exact integration commit, the historical upstream
   reference or verified replacement, the verification evidence, and its
@@ -244,7 +267,10 @@ Update `SCRATCHPAD.md` during the cycle, not as an afterthought:
   request review health or implying the workshop maintains those requests;
 - retain rerere or conflict context only while it can change a later
   decision;
-- remove superseded state and append one compact dated history entry;
+- remove superseded state and append one compact dated history entry. For a
+  completed audit, include the aggregate upstream range, commit count, notable
+  releases or capabilities, and the retire/repair/unchanged disposition
+  totals plus any non-unchanged features;
 - record the final branch reconciliation; list an explicit `DELETEME/*` marker
   only when it affects maintenance.
 
@@ -263,9 +289,13 @@ group `## Notify` declares:
 terminal-notifier -title "<title>" -message "<concise outcome>" -group "<group>"
 ```
 
-Finish with the published integration SHA, the consumer's result, feature
-disposition, checks run, the scratchpad commit, upstream replacements
-considered, and anything deliberately left for the human. After a
+Finish with the audited upstream range and commit count, notable upstream
+capabilities, the retire/repair/unchanged feature dispositions, the published
+integration SHA, the consumer's result, checks run, the scratchpad commit,
+upstream replacements considered, and anything deliberately left for the
+human. Report the aggregate range from the prior audited frontier even when
+intervening feature work had already delivered its endpoint; never summarize
+only the final zero-delta repair. After a
 successful hand-over and scratchpad publication, confirm no live process
 uses a cycle-owned worktree, then remove only the clean worktrees this
 cycle created; keep their branches and exact commits available for the next
