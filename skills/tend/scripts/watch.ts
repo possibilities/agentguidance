@@ -21,6 +21,7 @@ export type ProposalAction =
 
 export interface TendProposal {
   action: ProposalAction;
+  session_slug: string | null;
   repository: string;
   worktree: string;
   branch: string | null;
@@ -73,6 +74,7 @@ export interface SurveyOptions {
   projectRoots: string[];
   worktreeRoot: string;
   ownership?: AgentSnapshot;
+  sessionSlugs?: Readonly<Record<string, string>>;
   herdrBin?: string;
 }
 
@@ -213,6 +215,39 @@ export function worktreeHasActiveAgent(
   return agents.some((agent) => agentPaths(agent).some((path) => pathIsWithin(path, worktree)));
 }
 
+function conversationSlug(agent: JsonObject): string | null {
+  const tokens = asObject(agent["tokens"]);
+  const value = tokens?.["conversation"];
+  return typeof value === "string" && value !== "" && value !== "untitled agent"
+    ? value
+    : null;
+}
+
+function worktreeRootForAgentPath(path: string, worktreeRoot: string): string | null {
+  const rel = relative(normalize(worktreeRoot), normalize(path));
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
+  const parts = rel.split(/[\\/]+/);
+  return parts.length >= 2 ? normalize(join(worktreeRoot, parts[0]!, parts[1]!)) : null;
+}
+
+/** Keep the human-facing conversation identity after its live agent row
+ * disappears. The long-running watcher owns this in memory; no repository or
+ * worktree metadata is written. */
+export function rememberSessionSlugs(
+  remembered: Record<string, string>,
+  agents: readonly JsonObject[],
+  worktreeRoot: string,
+): void {
+  for (const agent of agents) {
+    const slug = conversationSlug(agent);
+    if (!slug) continue;
+    for (const path of agentPaths(agent)) {
+      const worktree = worktreeRootForAgentPath(path, worktreeRoot);
+      if (worktree) remembered[worktree] = slug;
+    }
+  }
+}
+
 export function queryAgents(herdrBin = process.env.HERDR_BIN_PATH ?? "herdr"): AgentSnapshot {
   const result = run(herdrBin, ["agent", "list"]);
   if (result.code !== 0) {
@@ -260,11 +295,13 @@ function inspectWorktree(
   repository: string,
   record: WorktreeRecord,
   mainHead: string,
+  sessionSlug: string | null,
 ): TendProposal {
   const status = git(record.path, ["status", "--porcelain=v1", "--untracked-files=normal"]);
   const clean = status.code === 0 && status.stdout.trim() === "";
   const counts = aheadBehind(record.path) ?? { ahead: 0, behind: 0 };
   const base = {
+    session_slug: sessionSlug,
     repository,
     worktree: record.path,
     branch: record.branch,
@@ -375,11 +412,20 @@ export function surveyWorktrees(
         protectedByAgent += 1;
         continue;
       }
-      proposals.push(inspectWorktree(repository, record, target));
+      proposals.push(inspectWorktree(
+        repository,
+        record,
+        target,
+        options.sessionSlugs?.[normalize(record.path)] ?? null,
+      ));
     }
   }
 
-  proposals.sort((left, right) => left.worktree.localeCompare(right.worktree));
+  proposals.sort((left, right) =>
+    `${left.session_slug ?? ""}:${left.worktree}`.localeCompare(
+      `${right.session_slug ?? ""}:${right.worktree}`,
+    )
+  );
   issues.sort((left, right) =>
     `${left.repository ?? ""}:${left.worktree ?? ""}:${left.reason}`.localeCompare(
       `${right.repository ?? ""}:${right.worktree ?? ""}:${right.reason}`,
@@ -429,7 +475,7 @@ function ownSession(agents: readonly JsonObject[]): string | null {
 export function wakeMessage(survey: TendSurvey): string {
   return [
     `<tend_event>${JSON.stringify(survey)}</tend_event>`,
-    "Automated Tend wake — re-run the read-only snapshot, notify if it still has proposals, and return the /tend minisketch. Do not perform any proposed action.",
+    "Automated Tend wake — re-run the read-only snapshot, notify if it still has proposals, and return the /tend minisketch. Lead with each event proposal's session_slug when the matching refreshed worktree and HEAD are unchanged; the live agent row may already be gone. Do not perform any proposed action.",
   ].join("\n");
 }
 
@@ -619,6 +665,7 @@ if (import.meta.main) {
   }
 
   let lastFingerprint = "";
+  const rememberedSessionSlugs: Record<string, string> = {};
   let debounce: ReturnType<typeof setTimeout> | null = null;
   const gitWatches = new GitWatchSet();
   let publish: (occasion: TendSurvey["occasion"], wake: boolean) => void;
@@ -632,7 +679,12 @@ if (import.meta.main) {
   };
   publish = (occasion: TendSurvey["occasion"], shouldWake: boolean) => {
     const ownership = queryAgents(options.herdrBin);
-    const survey = surveyWorktrees({ ...options, ownership }, occasion);
+    rememberSessionSlugs(rememberedSessionSlugs, ownership.agents, options.worktreeRoot);
+    const survey = surveyWorktrees({
+      ...options,
+      ownership,
+      sessionSlugs: rememberedSessionSlugs,
+    }, occasion);
     const fingerprint = surveyFingerprint(survey);
     if (fingerprint === lastFingerprint) return;
     lastFingerprint = fingerprint;

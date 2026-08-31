@@ -25,8 +25,11 @@ scripts/watch.ts --once
 
 The one JSON object is the current `tend_survey`. Git answers which linked
 worktrees exist and how each branch relates to its repository's local `main`;
-Herdr answers whether any agent is still in one. Treat `ownership_available:
-false` as a failed safety check, never as an empty agent list.
+Herdr answers whether any agent is still in one. Each proposal's
+`session_slug` is Herdr's generated conversation name from
+`tokens.conversation`, retained by the long-running watcher after that agent
+exits. Treat `ownership_available: false` as a failed safety check, never as an
+empty agent list.
 
 Every agent row whose `cwd` or `foreground_cwd` is the worktree or lies inside
 it protects that worktree. Status does not weaken the protection: `idle`,
@@ -58,18 +61,25 @@ therefore blind, load the `notify` skill and post one grouped notification
 ```markdown
 ## Tend
 
-- Remove `<worktree>`; `<branch>` at `<short-head>` is clean and contained in
-  local `main` at `<short-main>`. The branch will be retained.
-- Catch up `<worktree>` by rebasing `<branch>` onto local `main`; it is `<ahead>`
-  ahead and `<behind>` behind, clean, and has no live Herdr agent.
-- Inspect `<worktree>` before lifecycle work: `<reason>`.
+- Remove `<session-slug>` (`<repository>`, worktree `<worktree>`); `<branch>` at
+  `<short-head>` is clean and contained in local `main` at `<short-main>`. The
+  branch will be retained.
+- Catch up `<session-slug>` (`<repository>`, worktree `<worktree>`) by rebasing
+  `<branch>` onto local `main`; it is `<ahead>` ahead and `<behind>` behind,
+  clean, and has no live Herdr agent.
+- Inspect `<session-slug>` (`<repository>`, worktree `<worktree>`) before
+  lifecycle work: `<reason>`.
 
 No actions have been taken.
 ```
 
-Use one bullet per proposal, include the evidence the helper returned, and say
-plainly when ownership was unavailable or a repository could not be assessed.
-Do not inflate an empty survey into a report: say there is nothing to tend.
+Use one bullet per proposal and always lead with `session_slug`; the random
+worktree name is only parenthetical location context for that named session.
+Never substitute the worktree name for a missing slug: identify it as an older
+unattributed session and include the repository, branch, and worktree only as
+diagnostic context. Include the evidence the helper returned, and say plainly
+when ownership was unavailable or a repository could not be assessed. Do not
+inflate an empty survey into a report: say there is nothing to tend.
 
 This first version ends at the minisketch. A later explicit request to carry
 out one of its bullets is new work under the session's ordinary approval and
@@ -93,7 +103,9 @@ sweep. It emits only when the actionable picture changes.
 so the same path works for Claude and Codex. The wake contains the complete
 survey JSON. On a wake, run `scripts/watch.ts --once` again before notifying or
 writing the minisketch: an event is a reason to look, not a lease on state that
-may already have changed.
+may already have changed. When an event proposal's worktree and HEAD still
+match the refreshed proposal, preserve its `session_slug`; the one-shot query
+may no longer see the agent row from which the watcher retained that identity.
 
 If the watcher reports that it cannot subscribe, cannot query ownership, or
 cannot address this session, diagnose that failure rather than replacing the

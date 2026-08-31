@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
+  rememberSessionSlugs,
   surveyFingerprint,
   surveyWorktrees,
   shouldWakeSelf,
@@ -63,11 +64,17 @@ describe("Tend survey", () => {
     const refsBefore = git(repository, "show-ref", "--heads");
     const worktreesBefore = git(repository, "worktree", "list", "--porcelain");
 
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoot, ownership: noAgents });
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoot,
+      ownership: noAgents,
+      sessionSlugs: { [worktree]: "finish-tend-worktree-cleanup" },
+    });
 
     expect(survey.proposals).toHaveLength(1);
     expect(survey.proposals[0]).toMatchObject({
       action: "remove_worktree",
+      session_slug: "finish-tend-worktree-cleanup",
       worktree,
       branch: "topic",
       branch_retained: true,
@@ -75,6 +82,26 @@ describe("Tend survey", () => {
     });
     expect(git(repository, "show-ref", "--heads")).toBe(refsBefore);
     expect(git(repository, "worktree", "list", "--porcelain")).toBe(worktreesBefore);
+  });
+
+  test("retains Herdr's conversation slug after its agent row disappears", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    const remembered: Record<string, string> = {};
+
+    rememberSessionSlugs(remembered, [{
+      cwd: join(worktree, "nested"),
+      tokens: { conversation: "repair-agent-worktree-lifecycle" },
+    }], worktreeRoot);
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoot,
+      ownership: noAgents,
+      sessionSlugs: remembered,
+    });
+
+    expect(remembered[worktree]).toBe("repair-agent-worktree-lifecycle");
+    expect(survey.proposals[0]?.session_slug).toBe("repair-agent-worktree-lifecycle");
   });
 
   test("proposes catch-up when an inactive branch and local main diverged", () => {
@@ -176,6 +203,7 @@ describe("Tend survey", () => {
     expect(shouldWakeSelf(false, first)).toBe(false);
     expect(shouldWakeSelf(true, first)).toBe(true);
     expect(wakeMessage(first)).toContain(JSON.stringify(first));
+    expect(wakeMessage(first)).toContain("session_slug");
     expect(wakeMessage(first)).toContain("Do not perform any proposed action");
   });
 });
