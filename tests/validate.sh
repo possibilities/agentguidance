@@ -111,8 +111,8 @@ grep -F 'validate-extension-splice' "$rendered" >/dev/null \
     || fail "the render did not prune a retired skill it once produced"
 
 # Operator publication guidance must survive the shared render into every
-# skill that consumes GUIDELINES.md; those skills are projected to Codex,
-# Claude, and Pi from the same common pack.
+# skill that consumes GUIDELINES.md; those skills are projected to Codex and
+# Claude from the same common pack.
 for guided_skill in build collab maintain orchestrate; do
     rendered_guided_skill="$rendered_skills/$guided_skill/SKILL.md"
     grep -F 'gh gist create FILE --desc "…" --web' "$rendered_guided_skill" >/dev/null \

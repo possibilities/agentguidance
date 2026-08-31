@@ -21,10 +21,9 @@ question first; otherwise pick and proceed.
 
 <!-- fragment: orchestrator-conduct.md -->
 
-Here the native facility is the harness's background agent — in Claude
-Code, the Agent tool with run_in_background; in pi, the `subagent` tool
-with `subagent_wait` — and its completion arrives as a task notification
-or through the dispatching tool's own wait. The surface is herdr: load
+Here the native facility is the harness's background-agent API, and its
+completion arrives as a task notification or through the dispatching tool's
+own wait. The surface is herdr: load
 the `herdr` skill for the mechanics, split a pane and `agent start` each
 placed worker under a speakable name, and tag its pane (`herdr pane
 report-metadata --token worker=<name>`) so wake wiring and views can
