@@ -137,6 +137,11 @@ These hold for every workshop, whatever its spec says:
    even when some or all of those commits are already in Integration because
    intervening feature work replayed the fork. Read every upstream commit in
    that aggregate interval and group related changes before judging features.
+   Build the human-facing upstream summary from those groups as the audit
+   proceeds: describe capabilities, fixes, removals, and migrations rather
+   than dumping commit subjects. Capture stable changelog, release-note,
+   compare, or commit links when the upstream provides them; pin links to the
+   audited range rather than ambient HEAD.
    If an older scratchpad does not name a frontier separately, reconstruct it
    from the last completed maintenance entry and repository history; do not
    silently substitute the newer delivered baseline. Record the migration.
@@ -146,8 +151,13 @@ These hold for every workshop, whatever its spec says:
    feature remains carried but upstream interacts with it; or keep unchanged
    because upstream neither replaces nor affects it. A replay or conflict list
    is not this semantic review. Keep the disposition ledger until the
-   scratchpad and final report carry its result. Evidence only: do not rebase
-   or push historical branches, or comment on, label, close, or edit requests.
+   scratchpad and final report carry its result. Separately assess whether the
+   upstream change alters our stance toward the behavior: it may complement or
+   simplify a carry without replacing it, narrow the remaining downstream
+   contract, make the carry redundant, increase its maintenance cost, or create
+   a consequential product choice. A repair disposition does not imply that
+   the stance stayed the same. Evidence only: do not rebase or push historical
+   branches, or comment on, label, close, or edit requests.
 
 ## Reconcile the fork
 
@@ -269,8 +279,9 @@ Update `SCRATCHPAD.md` during the cycle, not as an afterthought:
   decision;
 - remove superseded state and append one compact dated history entry. For a
   completed audit, include the aggregate upstream range, commit count, notable
-  releases or capabilities, and the retire/repair/unchanged disposition
-  totals plus any non-unchanged features;
+  releases or capabilities, stable upstream detail links when available, the
+  retire/repair/unchanged disposition totals plus any non-unchanged features,
+  and every material change in stance toward a carried behavior;
 - record the final branch reconciliation; list an explicit `DELETEME/*` marker
   only when it affects maintenance.
 
@@ -289,19 +300,59 @@ group `## Notify` declares:
 terminal-notifier -title "<title>" -message "<concise outcome>" -group "<group>"
 ```
 
-Finish with the audited upstream range and commit count, notable upstream
-capabilities, the retire/repair/unchanged feature dispositions, the published
-integration SHA, the consumer's result, checks run, the scratchpad commit,
-upstream replacements considered, and anything deliberately left for the
-human. Report the aggregate range from the prior audited frontier even when
-intervening feature work had already delivered its endpoint; never summarize
-only the final zero-delta repair. After a
-successful hand-over and scratchpad publication, confirm no live process
-uses a cycle-owned worktree, then remove only the clean worktrees this
+After a successful hand-over and scratchpad publication, confirm no live
+process uses a cycle-owned worktree, then remove only the clean worktrees this
 cycle created; keep their branches and exact commits available for the next
 reconciliation, and never remove an unrelated or pre-existing worktree in
-passing. Silence is appropriate when no noteworthy capability or decision
-was found.
+passing.
+
+Every invocation ends with a self-contained, human-facing completion report
+in the final transcript response, whether the cycle shipped, made no changes,
+or stopped blocked. A scratchpad commit, notification, machine receipt, or
+agent-to-agent handoff does not replace this report. Lead with the outcome,
+then use these sections in plain language. Never omit a section because its
+answer is empty; say `None` or `No material change` explicitly.
+
+- **Outcome.** Say successful, no-op, or blocked. Name the delivered upstream,
+  Integration, and consumer identity; for a blocked cycle, say explicitly
+  that the prior publication and consumer binding were retained.
+- **Upstream reviewed.** Give the aggregate audited range and commit count,
+  and summarize meaningful user-facing, internal, and carry-relevant change
+  groups inline. Link authoritative changelog or release notes when they cover
+  the interval, and link the exact compare range or commits when the hosting
+  provider permits. Say explicitly when there was no upstream delta or no
+  authoritative link. A changelog supplements rather than replaces reading
+  the interval, and a raw commit list does not stand in for the summary.
+- **Fork accommodations.** Name each carried behavior that changed because of
+  upstream, the interaction that required it, the adaptation, the observable
+  behavior retained, and focused proof. Distinguish semantic repairs from
+  clean replays or mechanical conflict resolution, and say `None beyond
+  replay` when true. Put unrelated defects discovered by review or gating in
+  follow-ups rather than presenting them as upstream accommodations.
+- **Stance and carry impact.** State `Material stance changed` or `No
+  material stance change`, give the retire/repair/unchanged totals and every
+  non-unchanged feature, and explain whether upstream left each relevant carry
+  necessary as-is, complemented or simplified it, narrowed its remaining
+  scope, made it redundant or retired, increased its maintenance cost, or
+  exposed a product decision. Call out corresponding `MAINTAIN.md` contract
+  changes, new retirement or upstream-offer opportunities, and decisions still
+  owed by the human. Never infer redundancy merely from a merged or closed
+  upstream request.
+- **Evidence and attention.** Report the published Integration identity,
+  consumer result, meaningful gate and focused-check evidence, scratchpad
+  commit and new audited frontier, nonblocking proof still running, residual
+  risks or follow-ups, retained cycle worktrees or explicit deletion markers,
+  and anything deliberately left for the human.
+
+Keep the report proportional to the cycle and readable before presenting
+low-level evidence. A compact table is useful when several carries changed.
+Put exhaustive SHA graphs, leases, file inventories, and command receipts
+after the readable report or behind a durable link when they are needed; do
+not make the human reconstruct the outcome from them. Report the aggregate
+range from the prior audited frontier even when intervening feature work had
+already delivered its endpoint; never summarize only the final zero-delta
+repair. A quiet cycle may omit the macOS notification, but never the
+completion report.
 
 <!-- extension-prompt: SYSTEM.md -->
 

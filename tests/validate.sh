@@ -110,6 +110,28 @@ grep -F 'validate-extension-splice' "$rendered" >/dev/null \
 [ ! -e "$rendered_skills/retired-validate" ] \
     || fail "the render did not prune a retired skill it once produced"
 
+# A maintenance run's machine receipt and notification do not replace its
+# human closeout. Assert the required report shape on the rendered product,
+# including the explicit no-change path, and reject the former silence rule.
+rendered_maintain="$rendered_skills/maintain/SKILL.md"
+for report_section in \
+    '**Outcome.**' \
+    '**Upstream reviewed.**' \
+    '**Fork accommodations.**' \
+    '**Stance and carry impact.**' \
+    '**Evidence and attention.**'
+do
+    grep -F -- "$report_section" "$rendered_maintain" >/dev/null \
+        || fail "the rendered maintain skill omits $report_section"
+done
+grep -F 'Never omit a section because its' "$rendered_maintain" >/dev/null \
+    || fail "the rendered maintain skill can silently omit an empty report section"
+grep -F 'No material change' "$rendered_maintain" >/dev/null \
+    || fail "the rendered maintain skill can silently omit an empty report section"
+if grep -F 'Silence is appropriate' "$rendered_maintain" >/dev/null; then
+    fail "the rendered maintain skill still permits a silent closeout"
+fi
+
 # Operator publication guidance must survive the shared render into every
 # skill that consumes GUIDELINES.md; those skills are projected to Codex and
 # Claude from the same common pack.
