@@ -28,7 +28,7 @@ tests/branch-policy.sh
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in build collab email maintain notify orchestrate prompt resource-create resource-update story watch-requests; do
+for skill in build collab email maintain notify orchestrate prompt resource-create resource-update story tend watch-requests; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
@@ -48,8 +48,13 @@ explicit_model_skills=$(
     done | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'
 )
 [ "$explicit_model_skills" = \
-    "build maintain orchestrate resource-create resource-update watch-requests" ] \
+    "build maintain orchestrate resource-create resource-update tend watch-requests" ] \
     || fail "explicit-only skill policy drifted: $explicit_model_skills"
+
+[ -x skills/tend/scripts/watch.ts ] \
+    || fail "the tend watcher is not executable"
+command -v bun >/dev/null 2>&1 || fail "bun is required to test tend"
+bun test tests/tend.test.ts
 # The resource skills document their schema as living beside them; the
 # update side carries it as a symlink so there is exactly one source.
 for manifest_skill in resource-create resource-update; do

@@ -41,6 +41,12 @@ it execs the render; the name is the fleet convention, the render is this
 repo's use of it.
 _Avoid_: build step, postinstall.
 
+**Tend** — the advisory lifecycle loop for inactive Herdr worktrees: observe
+Git and the Surface, notify the human, and propose cleanup or catch-up without
+performing it. It is neither fork maintenance nor authority to integrate or
+reap peer work.
+_Avoid_: maintain, supervise, reap.
+
 **Model invocation policy** — the portable fact recorded by
 `disable-model-invocation` in a skill template's `SKILL.md` frontmatter;
 absent or false means model-invocable. AgentStart derives Codex's inverse
