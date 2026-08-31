@@ -20,7 +20,7 @@ Tend requires a Herdr-managed pane: verify `HERDR_ENV=1` before querying the
 surface. Resolve this skill's directory and run:
 
 ```sh
-scripts/watch.ts --once
+bun scripts/watch.ts --once
 ```
 
 The one JSON object is the current `tend_survey`. Git answers which linked
@@ -91,7 +91,7 @@ After reporting the snapshot, run one copy of the watcher through the
 harness's managed long-lived process facility:
 
 ```sh
-scripts/watch.ts --wake-self
+bun scripts/watch.ts --wake-self
 ```
 
 Do not raw-background it. Its first stdout record is the initial survey. It
@@ -101,11 +101,12 @@ sweep. It emits only when the actionable picture changes.
 
 `--wake-self` addresses this pane's current agent session through AgentSurface,
 so the same path works for Claude and Codex. The wake contains the complete
-survey JSON. On a wake, run `scripts/watch.ts --once` again before notifying or
-writing the minisketch: an event is a reason to look, not a lease on state that
-may already have changed. When an event proposal's worktree and HEAD still
-match the refreshed proposal, preserve its `session_slug`; the one-shot query
-may no longer see the agent row from which the watcher retained that identity.
+survey JSON. On a wake, run `bun scripts/watch.ts --once` again before
+notifying or writing the minisketch: an event is a reason to look, not a lease
+on state that may already have changed. When an event proposal's worktree and
+HEAD still match the refreshed proposal, preserve its `session_slug`; the
+one-shot query may no longer see the agent row from which the watcher retained
+that identity.
 
 If the watcher reports that it cannot subscribe, cannot query ownership, or
 cannot address this session, diagnose that failure rather than replacing the
