@@ -21,13 +21,20 @@ repo carries only the doctrine that applies everywhere.
 ## Install
 
 AgentStart owns installation. Its skills scan ships `skills/<name>/` whole
-into the default `common` capability pack, then runs `scripts/post-sync` — the
+into the fixed fleet resource set, then runs `scripts/post-sync` — the
 render — so the installed copies arrive already composed with the operator's
-extension prompts. Nothing here is installed by hand. A machine without the
-AgentStart seam can still render directly:
+extension prompts. Nothing here is installed by hand:
 
 ```sh
-scripts/render   # templates + fragments + ~/.config/agentguidance → AgentStart's common pack
+~/code/agentstart/scripts/sync-skills   # the only path that reaches a session
+```
+
+`scripts/render` is that seam's composer, not an entry point: it refuses to run
+without `AGENTGUIDANCE_SKILLS_ROOT`, which sync-skills supplies. A machine
+without the AgentStart seam renders into a tree of its own choosing:
+
+```sh
+AGENTGUIDANCE_SKILLS_ROOT=/path/to/skills scripts/render
 ```
 
 ## Layout
@@ -37,7 +44,7 @@ scripts/render   # templates + fragments + ~/.config/agentguidance → AgentStar
   files, shipped whole.
 - `fragments/` — doctrine shared between templates; a missing fragment
   fails the render.
-- `scripts/render` — the composer; `scripts/post-sync` — the fleet hook
+- `scripts/render` — the composer, driven by the seam; `scripts/post-sync` — the fleet hook
   that execs it.
 - `tests/validate.sh` — the gate; run it before committing.
 

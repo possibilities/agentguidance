@@ -84,7 +84,13 @@ command -v bun >/dev/null 2>&1 || fail "bun is required to validate the render"
 
 render_home=$(mktemp -d "${TMPDIR:-/tmp}/agentguidance-validate.XXXXXX")
 trap 'rm -rf "$render_home"' EXIT
-rendered_skills="$render_home/.local/share/agentstart/capabilities/packs/common/skills"
+# The render takes its install root from the seam, never from a default of its
+# own — that refusal is what keeps this fixture from drifting away from the
+# tree sessions load, which is how the target silently rotted once before.
+rendered_skills="$render_home/skills"
+if HOME="$render_home" scripts/render >/dev/null 2>&1; then
+    fail "the render must refuse to run without AGENTGUIDANCE_SKILLS_ROOT"
+fi
 mkdir -p "$render_home/.config/agentguidance"
 printf '## System\n\nvalidate-system-extension\n' \
     >"$render_home/.config/agentguidance/SYSTEM.md"
@@ -93,9 +99,9 @@ printf '## Guidelines\n\ngh gist create FILE --desc "…" --web\n\ngh gist view 
 printf '## Tools\n\nvalidate-extension-splice\n' \
     >"$render_home/.config/agentguidance/TOOLS.md"
 mkdir -p "$rendered_skills/retired-validate"
-printf '<!-- Rendered from %s/skills/retired-validate/SKILL.md — do not edit; change the template or extension prompts and re-run scripts/render. -->\nstale\n' \
+printf '<!-- Rendered from %s/skills/retired-validate/SKILL.md — do not edit; change the template or extension prompts and re-run ~/code/agentstart/scripts/sync-skills. -->\nstale\n' \
     "$root" >"$rendered_skills/retired-validate/SKILL.md"
-HOME="$render_home" scripts/render >/dev/null \
+HOME="$render_home" AGENTGUIDANCE_SKILLS_ROOT="$rendered_skills" scripts/render >/dev/null \
     || fail "the render failed against a fixture HOME"
 
 rendered="$rendered_skills/collab/SKILL.md"

@@ -3,8 +3,13 @@
 Skill directories under `skills/` are templates. The installed copies under
 `~/.local/share/agentstart/resources/skills/` are rendered artifacts — never
 edit them. After changing any template, a fragment in `fragments/`, or an
-extension prompt in `~/.config/agentguidance/`, run `scripts/render` to rebuild
-them.
+extension prompt in `~/.config/agentguidance/`, run
+`~/code/agentstart/scripts/sync-skills` to rebuild them. That is the only path
+that reaches a live session: it ships these templates, execs `scripts/render`
+over them, and fans the result out into the per-harness trees a session loads
+(`resources/claude/agent/skills`, `resources/codex-marketplace/…`). Running
+`scripts/render` by hand renders nothing — it refuses without an install root,
+because choosing its own would write a tree nobody reads.
 
 Two kinds of render point, spliced by `scripts/render`:
 

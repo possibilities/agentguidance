@@ -28,18 +28,22 @@ const configDir = join(
   process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
   "agentguidance",
 );
-const installRoot =
-  process.env.AGENTGUIDANCE_SKILLS_ROOT ??
-  join(
-    homedir(),
-    ".local",
-    "share",
-    "agentstart",
-    "capabilities",
-    "packs",
-    "common",
-    "skills",
+// No default install root, deliberately. AgentStart's sync-skills passes the
+// tree sessions actually load from, and it is the only sanctioned path: it
+// ships the templates, execs this render over them, and then fans the result
+// out into the per-harness plugin trees. A render that picked its own target
+// would write a tree nothing reads and report success — which is exactly the
+// drift this refusal replaces.
+const installRoot = process.env.AGENTGUIDANCE_SKILLS_ROOT;
+if (!installRoot) {
+  console.error(
+    "AGENTGUIDANCE_SKILLS_ROOT is unset: this render has no install target.\n" +
+      "Converge the machine instead — ~/code/agentstart/scripts/sync-skills —\n" +
+      "which renders these templates and publishes them where sessions load them.\n" +
+      "Set AGENTGUIDANCE_SKILLS_ROOT only to render into a throwaway tree.",
   );
+  process.exit(1);
+}
 const skillsRoot = join(repoRoot, "skills");
 const fragmentsDir = join(repoRoot, "fragments");
 const MARKER = /^<!-- extension-prompt: ([A-Za-z0-9][A-Za-z0-9._-]*\.md) -->$/;
@@ -112,7 +116,8 @@ function renderTemplate(templatePath) {
 
   const banner =
     `<!-- Rendered from ${templatePath} — do not edit; ` +
-    `change the template or extension prompts and re-run scripts/render. -->`;
+    `change the template or extension prompts and re-run ` +
+    `~/code/agentstart/scripts/sync-skills. -->`;
   let rendered = out.join("\n").trimEnd() + "\n";
   if (rendered.startsWith("---\n")) {
     const end = rendered.indexOf("\n---\n", 4);
