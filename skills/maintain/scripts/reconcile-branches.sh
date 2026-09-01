@@ -20,12 +20,23 @@ set -euo pipefail
 #                                these heads but never creates or removes them
 #   MAINTAIN_PRESERVE_OPEN_PRS   1 to freeze the exact heads of open upstream
 #                                pull requests from the fork (default: 1)
+#   MAINTAIN_WORKSHOP            the workshop checkout holding MAINTAIN.md,
+#                                recorded so a tool reading the fork's own
+#                                repository can find the spec (optional)
 #   MAINTAIN_OPEN_PR_HEADS_FILE  a fixture replacing the GitHub query (tests)
 #   MAINTAIN_ALLOW_LOCAL_REMOTES 1 to accept non-GitHub remote URLs (tests)
 #
 # --check plans and mutates nothing, not even the bound checkout's tracking
 # refs: it works from a disposable bare snapshot. --apply pushes the whole
 # plan in one atomic, exact-leased push and then repairs local tracking.
+#
+# The declaration above is also the fork's answer to any tool that must know
+# how the repository is shaped without reading its prose. --print-model emits
+# it as JSON and touches nothing. --configure-supervision converges it into
+# the bound checkout's own git config under `supervisor.*`, so a tool holding
+# only the repository can resolve the trunk and the branch namespaces the
+# fork keeps; --check-supervision verifies that convergence, and that
+# MAINTAIN.md still names the same branches.
 
 die() {
     printf 'maintain branches: %s\n' "$*" >&2
@@ -33,7 +44,7 @@ die() {
 }
 
 usage() {
-    printf 'Usage: reconcile-branches.sh --check|--apply\n'
+    printf 'Usage: reconcile-branches.sh --check|--apply|--print-model|--configure-supervision|--check-supervision\n'
 }
 
 case "${1:-}" in
@@ -42,6 +53,15 @@ case "${1:-}" in
         ;;
     --apply)
         mode=apply
+        ;;
+    --print-model)
+        mode=print-model
+        ;;
+    --configure-supervision)
+        mode=configure-supervision
+        ;;
+    --check-supervision)
+        mode=check-supervision
         ;;
     -h|--help)
         usage
@@ -74,6 +94,7 @@ carry_prefix="${MAINTAIN_CARRY_PREFIX-carry/}"
 quarantine_prefix="${MAINTAIN_QUARANTINE_PREFIX:-DELETEME/}"
 preserve_open_prs="${MAINTAIN_PRESERVE_OPEN_PRS:-1}"
 open_pr_heads_override="${MAINTAIN_OPEN_PR_HEADS_FILE:-}"
+workshop="${MAINTAIN_WORKSHOP:-}"
 
 case "$main_branch" in */*) die "the mirror branch may not contain a slash: $main_branch" ;; esac
 case "$integration_branch" in */*) die "the integration branch may not contain a slash: $integration_branch" ;; esac
@@ -88,6 +109,34 @@ case "$quarantine_prefix" in */) ;; *) die "the quarantine prefix must end with 
 is_carry() { [ -n "$carry_prefix" ] && [ "${1#"$carry_prefix"}" != "$1" ]; }
 is_quarantined() { [ "${1#"$quarantine_prefix"}" != "$1" ]; }
 
+# The declaration as data. A tool that must know the shape of the fork asks
+# for this rather than reading MAINTAIN.md's prose, so there is one source
+# and a mis-read is impossible rather than merely unlikely.
+json_string() {
+    printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+}
+
+print_model() {
+    printf '{\n'
+    printf '  "checkout": %s,\n' "$(json_string "$checkout")"
+    printf '  "workshop": %s,\n' "$(json_string "$workshop")"
+    printf '  "mirror_branch": %s,\n' "$(json_string "$main_branch")"
+    printf '  "integration_branch": %s,\n' "$(json_string "$integration_branch")"
+    printf '  "carry_prefix": %s,\n' "$(json_string "$carry_prefix")"
+    printf '  "quarantine_prefix": %s,\n' "$(json_string "$quarantine_prefix")"
+    printf '  "fork_repo": %s,\n' "$(json_string "$fork_repo")"
+    printf '  "upstream_repo": %s,\n' "$(json_string "$upstream_repo")"
+    printf '  "fork_remote": %s,\n' "$(json_string "$fork_remote")"
+    printf '  "upstream_remote": %s,\n' "$(json_string "$origin_remote")"
+    printf '  "preserve_open_prs": %s\n' "$preserve_open_prs"
+    printf '}\n'
+}
+
+if [ "$mode" = print-model ]; then
+    print_model
+    exit 0
+fi
+
 command -v git >/dev/null 2>&1 || die "git is required"
 command -v awk >/dev/null 2>&1 || die "awk is required"
 command -v cmp >/dev/null 2>&1 || die "cmp is required"
@@ -96,6 +145,71 @@ if [ -z "$open_pr_heads_override" ] && [ "$preserve_open_prs" -eq 1 ]; then
 fi
 git -C "$checkout" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
     || die "$checkout is not a git worktree"
+
+# Supervision: the same declaration, converged into the fork's own repository
+# so a tool holding only the checkout can resolve its trunk and the branch
+# namespaces this model keeps. Derived state, never a second declaration —
+# --check-supervision is what keeps it honest.
+apply_supervision() {
+    git -C "$checkout" config supervisor.trunk "$integration_branch"
+    git -C "$checkout" config supervisor.mirror "$main_branch"
+    git -C "$checkout" config supervisor.carryPrefix "$carry_prefix"
+    git -C "$checkout" config supervisor.quarantinePrefix "$quarantine_prefix"
+    if [ -n "$workshop" ]; then
+        git -C "$checkout" config supervisor.workshop "$workshop"
+    else
+        git -C "$checkout" config --unset-all supervisor.workshop 2>/dev/null || true
+    fi
+}
+
+expect_config() {
+    local key="$1" want="$2" have
+    have=$(git -C "$checkout" config --get "$key" 2>/dev/null) \
+        || die "$checkout does not configure $key; run --configure-supervision"
+    [ "$have" = "$want" ] \
+        || die "$checkout configures $key=$have, but the model declares $want"
+}
+
+# The spec is the human contract and the entrypoint is the machine one; a
+# workshop whose prose no longer names the branches it exports has drifted,
+# and that is worth failing on while both are still cheap to reconcile.
+check_spec() {
+    [ -n "$workshop" ] || return 0
+    local spec="$workshop/MAINTAIN.md" section
+    [ -f "$spec" ] || die "the declared workshop has no MAINTAIN.md: $spec"
+    section=$(awk '/^## Branch model$/ { inside = 1; next } /^## / { inside = 0 } inside' "$spec")
+    [ -n "$section" ] || die "$spec has no '## Branch model' section"
+    printf '%s\n' "$section" | grep -Fq -- "$main_branch" \
+        || die "$spec does not name the mirror branch $main_branch in its Branch model"
+    printf '%s\n' "$section" | grep -Fq -- "$integration_branch" \
+        || die "$spec does not name the integration branch $integration_branch in its Branch model"
+    if [ -n "$carry_prefix" ]; then
+        printf '%s\n' "$section" | grep -Fq -- "$carry_prefix" \
+            || die "$spec does not name the carry prefix $carry_prefix in its Branch model"
+    fi
+    printf '%s\n' "$section" | grep -Fq -- "$quarantine_prefix" \
+        || die "$spec does not name the deletion-marker prefix $quarantine_prefix in its Branch model"
+}
+
+if [ "$mode" = configure-supervision ]; then
+    check_spec
+    apply_supervision
+    printf 'Configured supervision in %s: trunk %s, mirror %s.\n' \
+        "$checkout" "$integration_branch" "$main_branch"
+    exit 0
+fi
+
+if [ "$mode" = check-supervision ]; then
+    check_spec
+    expect_config supervisor.trunk "$integration_branch"
+    expect_config supervisor.mirror "$main_branch"
+    expect_config supervisor.carryPrefix "$carry_prefix"
+    expect_config supervisor.quarantinePrefix "$quarantine_prefix"
+    [ -z "$workshop" ] || expect_config supervisor.workshop "$workshop"
+    printf 'Supervision configuration in %s matches the declared model.\n' "$checkout"
+    exit 0
+fi
+
 [ -z "$(git -C "$checkout" status --porcelain)" ] \
     || die "$checkout has local changes"
 

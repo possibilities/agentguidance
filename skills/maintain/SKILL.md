@@ -52,6 +52,14 @@ Three files, one job each:
 A workshop whose spec lacks a section has not said what the cycle should
 do there; stop and say so rather than improvise.
 
+## The declared model as data
+
+<!-- fragment: fork-supervision.md -->
+
+Converge supervision whenever the declared model changes, and expect
+`--check-supervision` to pass at the end of a cycle: an advisory tool reading
+a stale trunk would propose lifecycle work against the wrong branch.
+
 ## Invariants
 
 These hold for every workshop, whatever its spec says:

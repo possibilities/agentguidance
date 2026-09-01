@@ -24,6 +24,23 @@ fork_repo="$test_root/fork.git"
 upstream_repo="$test_root/upstream.git"
 checkout="$test_root/checkout"
 open_pr_heads="$test_root/open-pr-heads"
+workshop="$test_root/workshop"
+
+# A workshop is its specification plus the entrypoint that declares the same
+# model to a machine; the supervision checks below prove the two agree.
+mkdir -p "$workshop"
+cat >"$workshop/MAINTAIN.md" <<'SPEC'
+# Fork workshop fixture
+
+## Branch model
+
+- Mirror branch: `main`, an exact mirror of upstream.
+- Integration branch: `integration`, every carried feature composed together.
+- Composition: published `carry/<feature>` heads.
+- Deletion marker prefix: `DELETEME/`.
+
+## Features
+SPEC
 
 git init --quiet --initial-branch=main "$seed"
 git -C "$seed" config user.name maintain-test
@@ -410,5 +427,98 @@ set -e
 printf '%s\n' "$bad_prefix_output" \
     | grep -F 'the quarantine prefix must end with a slash' >/dev/null \
     || fail "did not explain the bad quarantine prefix"
+
+# The declaration is also data. --print-model must answer without touching the
+# repository, because a tool asking how a fork is shaped is not doing
+# maintenance and may be watching a checkout it must not disturb.
+model_refs_before=$(git -C "$checkout" show-ref)
+model_config_before=$(git -C "$checkout" config --local --list)
+model_output=$(
+    MAINTAIN_ALLOW_LOCAL_REMOTES=1 \
+    MAINTAIN_CHECKOUT="$checkout" \
+    MAINTAIN_WORKSHOP="$workshop" \
+    bash "$script" --print-model
+)
+for field in \
+    "\"checkout\": \"$checkout\"" \
+    "\"workshop\": \"$workshop\"" \
+    '"mirror_branch": "main"' \
+    '"integration_branch": "integration"' \
+    '"carry_prefix": "carry/"' \
+    '"quarantine_prefix": "DELETEME/"'
+do
+    printf '%s\n' "$model_output" | grep -F -- "$field" >/dev/null \
+        || fail "--print-model omitted $field"
+done
+[ "$(git -C "$checkout" show-ref)" = "$model_refs_before" ] \
+    || fail "--print-model changed local refs"
+[ "$(git -C "$checkout" config --local --list)" = "$model_config_before" ] \
+    || fail "--print-model changed local config"
+
+# Supervision converges that declaration into the fork's own config, which is
+# how a tool holding only the repository learns its trunk.
+set +e
+unconfigured_output=$(
+    MAINTAIN_ALLOW_LOCAL_REMOTES=1 \
+    MAINTAIN_CHECKOUT="$checkout" \
+    MAINTAIN_WORKSHOP="$workshop" \
+    bash "$script" --check-supervision 2>&1
+)
+unconfigured_status=$?
+set -e
+[ "$unconfigured_status" -ne 0 ] || fail "--check-supervision passed before convergence"
+printf '%s\n' "$unconfigured_output" | grep -F 'run --configure-supervision' >/dev/null \
+    || fail "--check-supervision did not name the remedy"
+
+MAINTAIN_ALLOW_LOCAL_REMOTES=1 \
+MAINTAIN_CHECKOUT="$checkout" \
+MAINTAIN_WORKSHOP="$workshop" \
+    bash "$script" --configure-supervision >/dev/null
+for pair in \
+    "supervisor.trunk integration" \
+    "supervisor.mirror main" \
+    "supervisor.carryPrefix carry/" \
+    "supervisor.quarantinePrefix DELETEME/" \
+    "supervisor.workshop $workshop"
+do
+    key=${pair%% *}
+    want=${pair#* }
+    have=$(git -C "$checkout" config --get "$key") \
+        || fail "supervision did not set $key"
+    [ "$have" = "$want" ] || fail "$key is $have, expected $want"
+done
+[ "$(git -C "$checkout" show-ref)" = "$model_refs_before" ] \
+    || fail "--configure-supervision changed local refs"
+MAINTAIN_ALLOW_LOCAL_REMOTES=1 \
+MAINTAIN_CHECKOUT="$checkout" \
+MAINTAIN_WORKSHOP="$workshop" \
+    bash "$script" --check-supervision >/dev/null \
+    || fail "--check-supervision rejected its own convergence"
+
+# An empty carry prefix is a real declaration, not a missing one.
+MAINTAIN_ALLOW_LOCAL_REMOTES=1 \
+MAINTAIN_CHECKOUT="$linear_checkout" \
+MAINTAIN_CARRY_PREFIX='' \
+    bash "$script" --configure-supervision >/dev/null
+linear_carry=$(git -C "$linear_checkout" config --get supervisor.carryPrefix) \
+    || fail "an empty carry prefix was left undeclared"
+[ -z "$linear_carry" ] || fail "empty carry prefix became $linear_carry"
+
+# The spec is the human contract; drifting from it fails while both are cheap
+# to reconcile.
+printf '# Fork\n\n## Branch model\n\n- Mirror branch: main.\n' >"$workshop/MAINTAIN.md"
+set +e
+drift_output=$(
+    MAINTAIN_ALLOW_LOCAL_REMOTES=1 \
+    MAINTAIN_CHECKOUT="$checkout" \
+    MAINTAIN_WORKSHOP="$workshop" \
+    bash "$script" --check-supervision 2>&1
+)
+drift_status=$?
+set -e
+[ "$drift_status" -ne 0 ] || fail "accepted a MAINTAIN.md that omits the integration branch"
+printf '%s\n' "$drift_output" \
+    | grep -F 'does not name the integration branch integration' >/dev/null \
+    || fail "did not explain the specification drift"
 
 printf 'branch policy validation passed.\n'
