@@ -470,7 +470,55 @@ describe("Tend survey", () => {
 
     expect(reasons).toContain("is not on disk");
     expect(reasons).toContain("is not an absolute path");
-    expect(reasons).toContain("is not a Git repository");
+    expect(reasons).toContain("is not a Git checkout root");
+  });
+
+  test("a declared checkout inside a repository is reported, never followed", () => {
+    // `git rev-parse --git-common-dir` walks up, so a path that merely sits
+    // inside a repository answers for the enclosing one. Validating with it
+    // alone made a fork that failed to clone indistinguishable from a healthy
+    // one, and let a stale declaration drag an undeclared repository into the
+    // survey — where Tend would go on to propose removing its worktrees.
+    const { projects, repository: workshop } = fixture();
+    const uncloned = join(workshop, "fork", "never-cloned");
+    run(workshop, "mkdir", ["-p", uncloned]);
+    git(workshop, "config", "--add", "supervisor.checkout", uncloned);
+
+    const outsider = join(projects, "outsider");
+    run(projects, "mkdir", ["-p", join(outsider, "vendor", "inside")]);
+    git(outsider, "init", "-b", "main");
+    git(outsider, "config", "user.name", "Tend Test");
+    git(outsider, "config", "user.email", "tend@example.test");
+    writeFileSync(join(outsider, "file.txt"), "initial\n");
+    git(outsider, "add", "file.txt");
+    git(outsider, "commit", "-m", "initial");
+    const stale = fixture();
+    git(stale.repository, "config", "--add", "supervisor.checkout", join(outsider, "vendor", "inside"));
+
+    const declared = findRepositories([projects]);
+    expect(declared.repositories).not.toContain(realpathSync.native(uncloned));
+    expect(declared.issues.map((issue) => issue.reason).join("\n")).toContain(
+      "is not a Git checkout root",
+    );
+
+    // The enclosing repository must not be admitted by way of the declaration.
+    const scoped = findRepositories([stale.projects]);
+    expect(scoped.repositories).not.toContain(realpathSync.native(outsider));
+    expect(scoped.issues).toHaveLength(1);
+  });
+
+  test("a declared checkout may name a linked worktree root", () => {
+    // Root-ness is the test, not main-checkout-ness: a linked worktree is a
+    // real checkout, and resolves to the repository it belongs to.
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot, "declared-wt");
+    const other = fixture();
+    git(other.repository, "config", "--add", "supervisor.checkout", worktree);
+
+    const declared = findRepositories([other.projects]);
+
+    expect(declared.issues).toEqual([]);
+    expect(declared.repositories).toContain(realpathSync.native(repository));
   });
 
   test("every new declaration is optional", () => {

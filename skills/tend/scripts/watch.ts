@@ -165,14 +165,33 @@ function resolveCommonDir(checkout: string): string | null {
   return normalize(isAbsolute(value) ? value : join(checkout, value));
 }
 
+/** Whether a path names a checkout in its own right rather than merely a
+ * directory inside one. `--git-common-dir` walks up the tree, so it answers
+ * happily for `<repo>/vendor/nothing`; a declaration validated with it alone
+ * either vanishes into the enclosing repository or drags that repository into
+ * the survey. `--show-toplevel` names the work tree root, which equals the
+ * path only for a real checkout or a linked worktree. */
+function isCheckoutRoot(path: string): boolean {
+  const top = git(path, ["rev-parse", "--show-toplevel"]);
+  if (top.code === 0) return normalize(top.stdout.trim()) === normalize(path);
+  // A bare repository has no work tree and so no toplevel, but it is still a
+  // checkout root when the repository it names is the path itself.
+  const bare = git(path, ["rev-parse", "--is-bare-repository"]);
+  if (bare.code !== 0 || bare.stdout.trim() !== "true") return false;
+  const gitDir = git(path, ["rev-parse", "--absolute-git-dir"]);
+  return gitDir.code === 0 && normalize(gitDir.stdout.trim()) === normalize(path);
+}
+
 function candidateDirectories(root: string): string[] {
   const normalized = normalize(root);
   if (!existsSync(normalized)) return [];
   const candidates = [normalized];
   try {
-    for (const entry of readdirSync(normalized, { withFileTypes: true })) {
-      if (entry.isDirectory()) candidates.push(join(normalized, entry.name));
-    }
+    const entries = readdirSync(normalized, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    for (const name of entries) candidates.push(join(normalized, name));
   } catch {
     return candidates;
   }
@@ -207,12 +226,14 @@ export function findRepositories(projectRoots: readonly string[]): RepositoryDis
   const issues: TendIssue[] = [];
   const pending: string[] = [];
 
-  const admit = (candidate: string): void => {
+  const admit = (candidate: string): "admitted" | "known" | "unresolvable" => {
     const commonDir = resolveCommonDir(candidate);
-    if (!commonDir || byCommonDir.has(commonDir)) return;
+    if (!commonDir) return "unresolvable";
+    if (byCommonDir.has(commonDir)) return "known";
     const repository = mainWorktreeFor(commonDir, normalize(candidate));
     byCommonDir.set(commonDir, repository);
     pending.push(repository);
+    return "admitted";
   };
 
   for (const root of projectRoots) {
@@ -236,11 +257,17 @@ export function findRepositories(projectRoots: readonly string[]): RepositoryDis
         issues.push(reason("is not on disk"));
         continue;
       }
-      if (!resolveCommonDir(path)) {
-        issues.push(reason("is not a Git repository"));
+      if (!isCheckoutRoot(path)) {
+        // Either not a repository at all, or a path inside one. Both are a
+        // declaration naming something that is not a checkout.
+        issues.push(reason("is not a Git checkout root"));
         continue;
       }
-      admit(path);
+      // A declaration already reached by the walk is ordinary, not an issue;
+      // anything else dropped here would be silent, so it is reported.
+      if (admit(path) === "unresolvable") {
+        issues.push(reason("could not be resolved to a Git repository"));
+      }
     }
   }
 
