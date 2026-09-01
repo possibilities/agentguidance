@@ -27,7 +27,12 @@ export type ProposalAction =
 export interface RepositoryModel {
   trunk: string;
   mirror: string | null;
-  carry_prefix: string | null;
+  /** Declared carry namespaces. Multi-valued: a fork may publish its carried
+   * features under more than one prefix. */
+  carry_prefixes: string[];
+  /** Exact carry branch names living under no declared prefix at all — a real
+   * carry whose published name a coordination hold prevents renaming. */
+  carry_refs: string[];
   quarantine_prefix: string | null;
   workshop: string | null;
   fork: boolean;
@@ -184,17 +189,62 @@ function mainWorktreeFor(commonDir: string, fallback: string): string {
   return existsSync(parent) ? normalize(parent) : fallback;
 }
 
-export function findRepositories(projectRoots: readonly string[]): string[] {
+export interface RepositoryDiscovery {
+  repositories: string[];
+  issues: TendIssue[];
+}
+
+/** A depth-one walk of each project root, then every checkout the repositories
+ * found there declare. A workshop that keeps a bound fork inside itself — the
+ * fork sits at <workshop>/fork/<name>, gitignored by the workshop — is deeper
+ * than the walk reaches, and deepening the walk would drag in every vendored
+ * and node_modules repository on the machine. So the workshop declares the
+ * path instead, in `supervisor.checkout`. Declarations are followed to a fixed
+ * point and deduped by Git common directory, so a fork reached both ways is
+ * one repository, and a workshop binding several forks is ordinary. */
+export function findRepositories(projectRoots: readonly string[]): RepositoryDiscovery {
   const byCommonDir = new Map<string, string>();
+  const issues: TendIssue[] = [];
+  const pending: string[] = [];
+
+  const admit = (candidate: string): void => {
+    const commonDir = resolveCommonDir(candidate);
+    if (!commonDir || byCommonDir.has(commonDir)) return;
+    const repository = mainWorktreeFor(commonDir, normalize(candidate));
+    byCommonDir.set(commonDir, repository);
+    pending.push(repository);
+  };
+
   for (const root of projectRoots) {
-    for (const candidate of candidateDirectories(root)) {
-      const commonDir = resolveCommonDir(candidate);
-      if (commonDir && !byCommonDir.has(commonDir)) {
-        byCommonDir.set(commonDir, mainWorktreeFor(commonDir, normalize(candidate)));
+    for (const candidate of candidateDirectories(root)) admit(candidate);
+  }
+
+  while (pending.length > 0) {
+    const repository = pending.shift() as string;
+    for (const declared of configuredValues(repository, "supervisor.checkout")) {
+      const reason = (detail: string): TendIssue => ({
+        repository,
+        worktree: null,
+        reason: `declares checkout ${declared}, which ${detail}`,
+      });
+      if (!isAbsolute(declared)) {
+        issues.push(reason("is not an absolute path"));
+        continue;
       }
+      const path = normalize(declared);
+      if (!existsSync(path)) {
+        issues.push(reason("is not on disk"));
+        continue;
+      }
+      if (!resolveCommonDir(path)) {
+        issues.push(reason("is not a Git repository"));
+        continue;
+      }
+      admit(path);
     }
   }
-  return [...byCommonDir.values()].sort();
+
+  return { repositories: [...byCommonDir.values()].sort(), issues };
 }
 
 function parseWorktrees(text: string): WorktreeRecord[] {
@@ -339,12 +389,35 @@ function aheadBehind(worktree: string, trunk: string): { ahead: number; behind: 
   return Number.isFinite(ahead) && Number.isFinite(behind) ? { ahead, behind } : null;
 }
 
+/** Short branch names this repository holds a remote-tracking ref for, read
+ * from local refs only — never a fetch, never a network call. Publication is
+ * evidence about a branch, not a source for the branch model, which still
+ * comes from the declared config and nothing else. */
+export function publishedBranchNames(repository: string): Set<string> {
+  const names = new Set<string>();
+  const result = git(repository, ["for-each-ref", "--format=%(refname)", "refs/remotes"]);
+  if (result.code !== 0) return names;
+  const prefix = "refs/remotes/";
+  for (const line of result.stdout.split("\n")) {
+    const ref = line.trim();
+    if (!ref.startsWith(prefix)) continue;
+    const withoutRemote = ref.slice(prefix.length);
+    const separator = withoutRemote.indexOf("/");
+    if (separator === -1) continue;
+    const branch = withoutRemote.slice(separator + 1);
+    if (branch === "" || branch === "HEAD") continue;
+    names.add(branch);
+  }
+  return names;
+}
+
 function inspectWorktree(
   repository: string,
   record: WorktreeRecord,
   trunkHead: string,
   model: RepositoryModel,
   sessionSlug: string | null,
+  published: ReadonlySet<string>,
 ): TendProposal {
   const status = git(record.path, ["status", "--porcelain=v1", "--untracked-files=normal"]);
   const clean = status.code === 0 && status.stdout.trim() === "";
@@ -389,6 +462,18 @@ function inspectWorktree(
     `refs/heads/${model.trunk}`,
   ]).code === 0;
   if (contained) {
+    // In a fork repository containment is never sufficient on its own: a
+    // published carry head is an ancestor of integration by design. A branch
+    // with a remote-tracking counterpart is somebody's carry whatever it is
+    // named, so it is protected even when no declaration covers its name.
+    if (model.fork && published.has(record.branch)) {
+      return {
+        ...base,
+        action: "inspect",
+        reason:
+          `the branch is published on a remote, so containment in ${model.trunk} is not evidence the carry is finished`,
+      };
+    }
     return {
       ...base,
       action: "remove_worktree",
@@ -423,6 +508,18 @@ function configuredValue(repository: string, key: string): string | null {
 
 /** A declared prefix may legitimately be empty — a linear-stack fork carries
  * no carry heads — so an empty declaration is not a missing one. */
+/** Every value of a multi-valued declaration; empty when the key is absent.
+ * A key a workshop has not converged yet reads as no values, which must behave
+ * exactly as the single-valued world behaved before the key existed. */
+function configuredValues(repository: string, key: string): string[] {
+  const result = git(repository, ["config", "--get-all", key]);
+  if (result.code !== 0) return [];
+  return result.stdout
+    .split("\n")
+    .map((value) => value.trim())
+    .filter((value) => value !== "");
+}
+
 function declaredPrefix(repository: string, key: string): string | null {
   const value = configuredValue(repository, key);
   return value === null || value === "" ? null : value;
@@ -434,7 +531,8 @@ export function resolveModel(repository: string): RepositoryModel {
     return {
       trunk: "main",
       mirror: null,
-      carry_prefix: null,
+      carry_prefixes: [],
+      carry_refs: [],
       quarantine_prefix: null,
       workshop: null,
       fork: false,
@@ -443,7 +541,8 @@ export function resolveModel(repository: string): RepositoryModel {
   return {
     trunk,
     mirror: configuredValue(repository, "supervisor.mirror")?.trim() || null,
-    carry_prefix: declaredPrefix(repository, "supervisor.carryPrefix"),
+    carry_prefixes: configuredValues(repository, "supervisor.carryPrefix"),
+    carry_refs: configuredValues(repository, "supervisor.carryRef"),
     quarantine_prefix: declaredPrefix(repository, "supervisor.quarantinePrefix"),
     workshop: configuredValue(repository, "supervisor.workshop")?.trim() || null,
     fork: true,
@@ -456,8 +555,13 @@ export function resolveModel(repository: string): RepositoryModel {
 function heldByModel(branch: string, model: RepositoryModel): string | null {
   if (branch === model.trunk) return `the declared integration branch ${model.trunk}`;
   if (model.mirror && branch === model.mirror) return `the declared mirror branch ${model.mirror}`;
-  if (model.carry_prefix && branch.startsWith(model.carry_prefix)) {
-    return `a carried feature under the declared prefix ${model.carry_prefix}`;
+  for (const prefix of model.carry_prefixes) {
+    if (branch.startsWith(prefix)) {
+      return `a carried feature under the declared prefix ${prefix}`;
+    }
+  }
+  if (model.carry_refs.includes(branch)) {
+    return `the declared carry head ${branch}`;
   }
   if (model.quarantine_prefix && branch.startsWith(model.quarantine_prefix)) {
     return `an explicit deletion marker under ${model.quarantine_prefix}`;
@@ -469,10 +573,11 @@ export function surveyWorktrees(
   options: SurveyOptions,
   occasion: TendSurvey["occasion"] = "snapshot",
 ): TendSurvey {
-  const repositories = findRepositories(options.projectRoots);
+  const discovered = findRepositories(options.projectRoots);
+  const repositories = discovered.repositories;
   const ownership = options.ownership ?? queryAgents(options.herdrBin);
   const proposals: TendProposal[] = [];
-  const issues: TendIssue[] = [];
+  const issues: TendIssue[] = [...discovered.issues];
   let linkedWorktrees = 0;
   let herdrWorktrees = 0;
   let protectedByAgent = 0;
@@ -507,6 +612,7 @@ export function surveyWorktrees(
           `the declared workshop ${model.workshop} is missing, so the fork model cannot be reconciled with its specification`,
       });
     }
+    const published = model.fork ? publishedBranchNames(repository) : new Set<string>();
     const target = trunkHead(repository, model.trunk);
     if (!target) {
       issues.push({
@@ -530,6 +636,7 @@ export function surveyWorktrees(
         target,
         model,
         slugForWorktree(options.sessionSlugs ?? {}, record.path),
+        published,
       ));
     }
   }

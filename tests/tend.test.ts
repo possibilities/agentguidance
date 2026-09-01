@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
+  findRepositories,
+  publishedBranchNames,
   rememberSessionSlugs,
   resolveModel,
   surveyFingerprint,
@@ -256,7 +258,7 @@ describe("Tend survey", () => {
     declareFork(repository, "");
     const worktree = addWorktree(repository, worktreeRoot, "topic");
 
-    expect(resolveModel(repository).carry_prefix).toBeNull();
+    expect(resolveModel(repository).carry_prefixes).toEqual([]);
     const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents });
     expect(survey.proposals[0]).toMatchObject({ action: "remove_worktree", worktree });
   });
@@ -352,5 +354,145 @@ describe("Tend survey", () => {
       realpathSync.native(repository),
     );
     expect(survey.proposals).toHaveLength(0);
+  });
+
+  test("holds carries under every declared prefix and every declared exact ref", () => {
+    // A fork may publish carried features under more than one namespace, and a
+    // carry whose published name cannot be renamed yet lives under none of
+    // them. Both are declarations, and both must hold their worktree.
+    const { projects, repository, worktreeRoot } = fixture();
+    git(repository, "branch", "integration", "main");
+    declareFork(repository);
+    git(repository, "config", "--add", "supervisor.carryPrefix", "fix/");
+    git(repository, "config", "--add", "supervisor.carryRef", "driver-sync-wip");
+    addWorktree(repository, worktreeRoot, "carry/declared");
+    addWorktree(repository, worktreeRoot, "fix/second-prefix");
+    addWorktree(repository, worktreeRoot, "driver-sync-wip");
+
+    const model = resolveModel(repository);
+    expect(model.carry_prefixes).toEqual(["carry/", "fix/"]);
+    expect(model.carry_refs).toEqual(["driver-sync-wip"]);
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      ownership: noAgents,
+    });
+
+    expect(survey.proposals).toHaveLength(3);
+    for (const proposal of survey.proposals) expect(proposal.action).toBe("inspect");
+    expect(survey.proposals.map((proposal) => proposal.reason).join(" ")).toContain(
+      "the declared carry head driver-sync-wip",
+    );
+  });
+
+  test("a published branch in a fork is never proposed for removal", () => {
+    // The backstop for what nobody declared: a published carry head is an
+    // ancestor of integration by design, so containment cannot be evidence
+    // that its worktree is finished, whatever the branch is named.
+    const { projects, repository, worktreeRoot, root } = fixture();
+    git(repository, "branch", "integration", "main");
+    declareFork(repository);
+    const worktree = addWorktree(repository, worktreeRoot, "fix/unrenamed-carry");
+
+    // Publication is a local remote-tracking ref; the survey never fetches.
+    const remote = join(root, "remote.git");
+    run(root, "git", ["init", "--bare", remote]);
+    git(repository, "remote", "add", "fork", remote);
+    git(repository, "push", "--quiet", "fork", "fix/unrenamed-carry");
+    git(repository, "fetch", "--quiet", "fork");
+    expect(publishedBranchNames(repository).has("fix/unrenamed-carry")).toBe(true);
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      ownership: noAgents,
+    });
+
+    expect(survey.proposals).toHaveLength(1);
+    expect(survey.proposals[0]).toMatchObject({ action: "inspect", worktree });
+    expect(survey.proposals[0]?.reason).toContain("published on a remote");
+  });
+
+  test("the publication backstop does not apply outside a fork model", () => {
+    // An ordinary main-based repository has no carry semantics to protect, so
+    // a published, landed topic branch stays an ordinary removal candidate.
+    const { projects, repository, worktreeRoot, root } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot, "topic");
+    const remote = join(root, "remote.git");
+    run(root, "git", ["init", "--bare", remote]);
+    git(repository, "remote", "add", "origin", remote);
+    git(repository, "push", "--quiet", "origin", "topic");
+    git(repository, "fetch", "--quiet", "origin");
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      ownership: noAgents,
+    });
+
+    expect(survey.proposals[0]).toMatchObject({ action: "remove_worktree", worktree });
+  });
+
+  test("discovery follows a workshop's declared checkouts into nested forks", () => {
+    // A fork kept inside its workshop at <workshop>/fork/<name> is deeper than
+    // the depth-one walk reaches. The workshop declares the path instead, and
+    // one workshop may bind several forks.
+    const { projects, repository: workshop } = fixture();
+    const forks = [1, 2].map((index) => {
+      const fork = join(workshop, "fork", `bound-${index}`);
+      run(workshop, "mkdir", ["-p", fork]);
+      git(fork, "init", "-b", "main");
+      git(fork, "config", "user.name", "Tend Test");
+      git(fork, "config", "user.email", "tend@example.test");
+      writeFileSync(join(fork, "file.txt"), "initial\n");
+      git(fork, "add", "file.txt");
+      git(fork, "commit", "-m", "initial");
+      git(workshop, "config", "--add", "supervisor.checkout", fork);
+      return realpathSync.native(fork);
+    });
+
+    const discovered = findRepositories([projects]);
+
+    expect(discovered.issues).toEqual([]);
+    for (const fork of forks) expect(discovered.repositories).toContain(fork);
+  });
+
+  test("reports a declared checkout that cannot be followed", () => {
+    const { projects, repository: workshop } = fixture();
+    git(workshop, "config", "--add", "supervisor.checkout", join(projects, "absent-fork"));
+    git(workshop, "config", "--add", "supervisor.checkout", "fork/relative");
+    const notARepository = join(projects, "plain-directory");
+    run(projects, "mkdir", ["-p", notARepository]);
+    git(workshop, "config", "--add", "supervisor.checkout", notARepository);
+
+    const reasons = findRepositories([projects]).issues.map((issue) => issue.reason).join("\n");
+
+    expect(reasons).toContain("is not on disk");
+    expect(reasons).toContain("is not an absolute path");
+    expect(reasons).toContain("is not a Git repository");
+  });
+
+  test("every new declaration is optional", () => {
+    // Until a workshop converges the new keys, Tend must behave exactly as it
+    // did before they existed: no extra prefixes, no exact refs, no declared
+    // checkouts, and no issues invented from their absence.
+    const { projects, repository, worktreeRoot } = fixture();
+    git(repository, "branch", "integration", "main");
+    declareFork(repository);
+    const worktree = addWorktree(repository, worktreeRoot, "landed");
+
+    const model = resolveModel(repository);
+    expect(model.carry_prefixes).toEqual(["carry/"]);
+    expect(model.carry_refs).toEqual([]);
+    expect(findRepositories([projects]).issues).toEqual([]);
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      ownership: noAgents,
+    });
+
+    expect(survey.proposals[0]).toMatchObject({ action: "remove_worktree", worktree });
   });
 });
