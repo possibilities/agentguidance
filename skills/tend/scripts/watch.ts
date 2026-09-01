@@ -536,7 +536,7 @@ function inspectWorktree(
     // published carry head is an ancestor of integration by design. A branch
     // with a remote-tracking counterpart is somebody's carry whatever it is
     // named, so it is protected even when no declaration covers its name.
-    if (model.fork && !published.available) {
+    if (!published.available) {
       return {
         ...base,
         action: "inspect",
@@ -544,7 +544,7 @@ function inspectWorktree(
           `Git could not establish which branches are published, so containment in ${model.trunk} is not sufficient evidence`,
       };
     }
-    if (model.fork && published.names.has(record.branch)) {
+    if (published.names.has(record.branch)) {
       return {
         ...base,
         action: "inspect",
@@ -704,6 +704,8 @@ export function surveyWorktrees(
       });
       continue;
     }
+    // The only gate on the backstop: outside a fork model there is nothing to
+    // protect, and an empty scan lets containment mean landed as it always did.
     const published: PublicationScan = model.fork
       ? publishedBranchNames(repository)
       : { names: new Set<string>(), available: true };

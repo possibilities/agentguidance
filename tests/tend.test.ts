@@ -380,8 +380,14 @@ describe("Tend survey", () => {
     });
 
     expect(survey.proposals).toHaveLength(3);
-    for (const proposal of survey.proposals) expect(proposal.action).toBe("inspect");
-    expect(survey.proposals.map((proposal) => proposal.reason).join(" ")).toContain(
+    const reasonFor = (branch: string) =>
+      survey.proposals.find((proposal) => proposal.branch === branch);
+    expect(reasonFor("carry/declared")).toMatchObject({ action: "inspect" });
+    expect(reasonFor("carry/declared")?.reason).toContain("declared prefix carry/");
+    expect(reasonFor("fix/second-prefix")).toMatchObject({ action: "inspect" });
+    expect(reasonFor("fix/second-prefix")?.reason).toContain("declared prefix fix/");
+    expect(reasonFor("driver-sync-wip")).toMatchObject({ action: "inspect" });
+    expect(reasonFor("driver-sync-wip")?.reason).toContain(
       "the declared carry head driver-sync-wip",
     );
   });
@@ -466,7 +472,13 @@ describe("Tend survey", () => {
     run(projects, "mkdir", ["-p", notARepository]);
     git(workshop, "config", "--add", "supervisor.checkout", notARepository);
 
-    const reasons = findRepositories([projects]).issues.map((issue) => issue.reason).join("\n");
+    const issues = findRepositories([projects]).issues;
+    // Every issue names the repository whose declaration produced it, not the
+    // path being complained about.
+    for (const issue of issues) {
+      expect(issue.repository).toBe(realpathSync.native(workshop));
+    }
+    const reasons = issues.map((issue) => issue.reason).join("\n");
 
     expect(reasons).toContain("is not on disk");
     expect(reasons).toContain("is not an absolute path");
@@ -642,6 +654,63 @@ describe("Tend survey", () => {
       if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL;
       else process.env.GIT_CONFIG_GLOBAL = previous;
     }
+  });
+
+  test("a declared carry ref holds that branch exactly, never as a prefix", () => {
+    // carryRef is an exact name. Turning the lookup into a startsWith loop for
+    // symmetry with the prefixes would silently widen every declaration.
+    const { projects, repository, worktreeRoot } = fixture();
+    git(repository, "branch", "integration", "main");
+    declareFork(repository);
+    git(repository, "config", "--add", "supervisor.carryRef", "driver-sync");
+    addWorktree(repository, worktreeRoot, "driver-sync");
+    const extended = addWorktree(repository, worktreeRoot, "driver-sync-wip");
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      ownership: noAgents,
+    });
+
+    const held = survey.proposals.find((proposal) => proposal.branch === "driver-sync");
+    expect(held).toMatchObject({ action: "inspect" });
+    expect(held?.reason).toContain("the declared carry head driver-sync");
+    // The longer name merely starts with the declared one, so it is not held.
+    expect(survey.proposals.find((proposal) => proposal.branch === "driver-sync-wip"))
+      .toMatchObject({ action: "remove_worktree", worktree: extended });
+  });
+
+  test("declarations are followed to a fixed point and a cycle terminates", () => {
+    // The chain is a workshop declaring a fork that declares another checkout;
+    // the cycle is two repositories declaring each other. Both are promised by
+    // discovery and neither was covered.
+    const { projects, repository: first } = fixture();
+    const build = (name: string) => {
+      const path = join(projects, name);
+      run(projects, "mkdir", ["-p", path]);
+      git(path, "init", "-b", "main");
+      git(path, "config", "user.name", "Tend Test");
+      git(path, "config", "user.email", "tend@example.test");
+      writeFileSync(join(path, "file.txt"), "initial\n");
+      git(path, "add", "file.txt");
+      git(path, "commit", "-m", "initial");
+      return realpathSync.native(path);
+    };
+    // Nested so that only the declaration chain can reach them.
+    const middle = build(join("holder", "middle"));
+    const last = build(join("holder", "middle", "inner", "last"));
+    git(first, "config", "--add", "supervisor.checkout", middle);
+    git(middle, "config", "--add", "supervisor.checkout", last);
+    // And back to the start, which must not loop.
+    git(last, "config", "--add", "supervisor.checkout", realpathSync.native(first));
+
+    const declared = findRepositories([projects]);
+
+    expect(declared.issues).toEqual([]);
+    expect(declared.repositories).toContain(middle);
+    expect(declared.repositories).toContain(last);
+    // Each repository appears once despite being declared from two directions.
+    expect(new Set(declared.repositories).size).toBe(declared.repositories.length);
   });
 
   test("a declared checkout keeps a path Git may legally hand back untrimmed", () => {
