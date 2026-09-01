@@ -188,12 +188,12 @@ find it and aim it, never to fix the branch itself and never to push.
 - **Find the origin.** The head branch and its commits name the
   checkout; `git worktree list` in that repository (and in our fork's
   checkout when we carry patches there) finds the worktree the branch
-  lives in. Then find the session with the `chats` skill — cass over the
+  lives in. Then find the session with the `chats` skill — search the
   branch name, the request number, or the worktree path as workspace —
   and take its `source_path`, agent, and workspace from the hit.
 - **Get the resume command from the tool, not from memory:**
-  `cass resume <source_path> --shell` prints the native invocation for
-  that session's harness. Hand it over; never run a nested agent
+  `agentchats resume <source_path> --shell` prints the native invocation
+  for that session's harness. Hand it over; never run a nested agent
   yourself.
 - **Write the steering prompt.** One block the human can paste into the
   resumed session, carrying everything it needs and nothing it can look
@@ -229,7 +229,8 @@ Two deliveries, and a handoff may carry both:
 - **Resume an existing session** — the right delivery when the work
   continues something a session already holds: the branch, the
   reasoning, the review conversation. Give the exact command from
-  `cass resume <source_path> --shell`, then the prompt to paste into it.
+  `agentchats resume <source_path> --shell`, then the prompt to paste
+  into it.
 - **Start a new agent in a directory** — the right delivery when the
   work belongs to a repository rather than to a conversation. Give the
   working directory plainly, then a prompt written for someone with no
