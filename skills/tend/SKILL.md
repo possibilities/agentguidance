@@ -44,6 +44,15 @@ forgotten directory. Pass `--worktree-root PATH` (repeatable) to restrict the
 survey to particular roots; `counts.linked_worktrees` is the whole considered
 set and `counts.herdr_worktrees` the Herdr-managed part of it.
 
+Repositories are found one level below each project root, and then through
+every checkout those repositories declare in `supervisor.checkout` — the fork
+a workshop keeps inside itself is deeper than that walk reaches. Declarations
+are followed to a fixed point and deduped by Git common directory, so one
+workshop may bind several forks and a fork reached both ways is one
+repository. A declared checkout that is relative, absent, or not a repository
+is reported as an issue rather than skipped silently. The key is optional:
+absent, discovery is the plain walk it always was.
+
 A repository's main checkout is never a candidate, whatever its ancestry says.
 
 Its proposals are deliberately conservative:
@@ -66,14 +75,36 @@ ordinary `main` default.
 
 <!-- fragment: fork-supervision.md -->
 
-Tend reads that config and nothing else: never a workshop's prose, never a
-remote ref, never a guess. In such a repository the mirror branch, the
-integration branch, every branch under the declared carry prefix, and every
-deletion marker are `inspect` and never `remove_worktree`, whatever ancestry
-says. A published carry head is an ancestor of integration by design, so
+The branch model comes from that config and nothing else: never a workshop's
+prose, never a fetch, never a guess. Every declaration is optional, and a
+workshop that has converged none of them is read exactly as it was before they
+existed.
+
+Only the repository's own config is read — `--local`, never the global or
+system scope. A declaration converged anywhere else is invisible, and that is
+deliberate: read at the default scope, one stray `supervisor.trunk` in a
+user's `~/.gitconfig` would make every repository on the machine a fork.
+
+In such a repository the mirror branch, the integration branch, every branch
+under any declared carry prefix, every declared carry ref, and every deletion
+marker are `inspect` and never `remove_worktree`, whatever ancestry says. A published carry head is an ancestor of integration by design, so
 containment there is not evidence that its worktree is finished — those
 worktrees are the fork's standing working set, and integration and
 publication belong to `maintain`.
+
+Declarations cannot cover what nobody declared, so in a fork repository
+containment is never sufficient on its own: a branch holding a
+remote-tracking ref is somebody's carry whatever it is named, and it is
+`inspect`. That reads local refs the repository already has — evidence about a
+branch, never a source for the model, and never a network call. Removal
+survives only for the genuinely ephemeral worktree, whose branch was never
+published.
+
+A remote-tracking ref outlives the branch it tracks until someone prunes, so
+in a repository that never prunes this holds worktrees whose branches are long
+gone upstream. That is the safe direction and it is deliberate, but it is why
+a fork's declarations still matter: they say which branches are carries, where
+the backstop only says which were ever pushed.
 
 A missing local trunk means no ancestry decision, and so does a declared
 trunk with no such local branch. A declared workshop that is not on disk is
