@@ -22,6 +22,12 @@ That shape is declared once, in the workshop's
   convention — renaming a published branch is a publication, so the model
   describes what is there rather than what it wishes were there.
 
+  Declare a prefix only for a namespace the fork **owns**, and exact refs for
+  everything else. Widening a prefix to cover a stray carry silently claims
+  every future branch under it — including the namespace upstream offers use —
+  and the failure mode is invisible, because over-holding shows up only as
+  proposals that never appear.
+
   The same run converges `supervisor.checkout` onto the **workshop** repository:
   one absolute path per bound fork, multi-valued. That is the opposite
   direction from everything above, and it exists because a fork kept inside its
