@@ -95,6 +95,12 @@ branch, never a source for the model, and never a network call. Removal
 survives only for the genuinely ephemeral worktree, whose branch was never
 published.
 
+A remote-tracking ref outlives the branch it tracks until someone prunes, so
+in a repository that never prunes this holds worktrees whose branches are long
+gone upstream. That is the safe direction and it is deliberate, but it is why
+a fork's declarations still matter: they say which branches are carries, where
+the backstop only says which were ever pushed.
+
 A missing local trunk means no ancestry decision, and so does a declared
 trunk with no such local branch. A declared workshop that is not on disk is
 reported too: the model can no longer be reconciled with the specification it

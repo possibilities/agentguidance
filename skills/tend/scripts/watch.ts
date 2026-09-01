@@ -685,16 +685,6 @@ export function surveyWorktrees(
           `the declared workshop ${model.workshop} is missing, so the fork model cannot be reconciled with its specification`,
       });
     }
-    const published: PublicationScan = model.fork
-      ? publishedBranchNames(repository)
-      : { names: new Set<string>(), available: true };
-    if (model.fork && !published.available) {
-      issues.push({
-        repository,
-        worktree: null,
-        reason: "Git could not list published branches, so no worktree here is proposed for removal",
-      });
-    }
     const target = trunkHead(repository, model.trunk);
     if (!target) {
       issues.push({
@@ -705,6 +695,16 @@ export function surveyWorktrees(
           : "repository has no local main branch",
       });
       continue;
+    }
+    const published: PublicationScan = model.fork
+      ? publishedBranchNames(repository)
+      : { names: new Set<string>(), available: true };
+    if (!published.available) {
+      issues.push({
+        repository,
+        worktree: null,
+        reason: "Git could not list published branches, so no worktree here is proposed for removal",
+      });
     }
     for (const record of worktrees) {
       if (!ownership.available) continue;
