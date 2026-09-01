@@ -353,6 +353,23 @@ assert_ref DELETEME/collision "$pr_sha"
 git --git-dir="$fork_repo" update-ref -d refs/heads/collision
 git --git-dir="$fork_repo" update-ref -d refs/heads/DELETEME/collision
 
+# A tracking ref for a fork branch someone else deleted is pruned, not left
+# behind. Applying the policy is the only thing that refreshes the bound
+# checkout's view of the fork, and a stale remote-tracking ref outlives the
+# branch it tracks: a tool reading publication as evidence that a branch is
+# somebody's carry would hold its worktree out of lifecycle work forever.
+git --git-dir="$fork_repo" update-ref refs/heads/departed "$stale_sha"
+git -C "$checkout" fetch --quiet fork \
+    || fail "could not fetch the fork branch to be pruned"
+git -C "$checkout" rev-parse --verify --quiet refs/remotes/fork/departed \
+    >/dev/null || fail "could not establish the tracking ref to be pruned"
+git --git-dir="$fork_repo" update-ref -d refs/heads/departed
+run_policy --apply >/dev/null
+if git -C "$checkout" rev-parse --verify --quiet refs/remotes/fork/departed \
+    >/dev/null; then
+    fail "a tracking ref for a deleted fork branch survived reconciliation"
+fi
+
 # Neither local nor fork main may contain commits outside upstream main.
 git --git-dir="$fork_repo" update-ref refs/heads/main "$pr_sha"
 set +e
