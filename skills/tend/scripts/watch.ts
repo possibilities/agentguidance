@@ -416,26 +416,61 @@ function aheadBehind(worktree: string, trunk: string): { ahead: number; behind: 
   return Number.isFinite(ahead) && Number.isFinite(behind) ? { ahead, behind } : null;
 }
 
-/** Short branch names this repository holds a remote-tracking ref for, read
- * from local refs only — never a fetch, never a network call. Publication is
+export interface PublicationScan {
+  /** Branch names to treat as published. */
+  names: Set<string>;
+  /** False when Git could not be asked. Absence of a name is then not
+   * evidence that a branch is unpublished, and the caller must not read it
+   * as permission to remove anything. */
+  available: boolean;
+}
+
+/** Which of this repository's branches have been published, read from local
+ * refs and config only — never a fetch, never a network call. Publication is
  * evidence about a branch, not a source for the branch model, which still
  * comes from the declared config and nothing else. */
-export function publishedBranchNames(repository: string): Set<string> {
+export function publishedBranchNames(repository: string): PublicationScan {
   const names = new Set<string>();
-  const result = git(repository, ["for-each-ref", "--format=%(refname)", "refs/remotes"]);
-  if (result.code !== 0) return names;
-  const prefix = "refs/remotes/";
-  for (const line of result.stdout.split("\n")) {
-    const ref = line.trim();
-    if (!ref.startsWith(prefix)) continue;
-    const withoutRemote = ref.slice(prefix.length);
-    const separator = withoutRemote.indexOf("/");
-    if (separator === -1) continue;
-    const branch = withoutRemote.slice(separator + 1);
+  // A branch with a configured upstream is published under whatever name the
+  // remote gave it, which need not match the local one — exactly the carry
+  // whose published name cannot be matched locally.
+  const tracked = git(repository, [
+    "for-each-ref",
+    "--format=%(refname:short)%09%(upstream)",
+    "refs/heads",
+  ]);
+  if (tracked.code !== 0) return { names, available: false };
+  for (const line of tracked.stdout.split("\n")) {
+    const tab = line.indexOf("\t");
+    if (tab === -1) continue;
+    if (line.slice(tab + 1) !== "") names.add(line.slice(0, tab));
+  }
+  // A branch pushed without --set-upstream has a remote-tracking ref and no
+  // upstream config, so same-named remote refs count too. A remote name may
+  // itself contain a slash, so strip by configured remote, longest first,
+  // rather than assuming the name is one path component.
+  const remotes = git(repository, ["remote"]);
+  if (remotes.code !== 0) return { names, available: false };
+  const prefixes = remotes.stdout
+    .split("\n")
+    .filter((remote) => remote !== "")
+    .map((remote) => `refs/remotes/${remote}/`)
+    .sort((left, right) => right.length - left.length);
+  const refs = git(repository, ["for-each-ref", "--format=%(refname)", "refs/remotes"]);
+  if (refs.code !== 0) return { names, available: false };
+  for (const ref of refs.stdout.split("\n")) {
+    if (ref === "") continue;
+    const prefix = prefixes.find((candidate) => ref.startsWith(candidate));
+    // A ref under no configured remote is an orphan. Strip the first component
+    // as a guess: naming a branch that is not there over-protects, which is the
+    // safe direction, while skipping it could propose removing a real carry.
+    const branch = prefix === undefined
+      ? ref.slice("refs/remotes/".length).split("/").slice(1).join("/")
+      : ref.slice(prefix.length);
     if (branch === "" || branch === "HEAD") continue;
     names.add(branch);
   }
-  return names;
+  return { names, available: true };
 }
 
 function inspectWorktree(
@@ -444,7 +479,7 @@ function inspectWorktree(
   trunkHead: string,
   model: RepositoryModel,
   sessionSlug: string | null,
-  published: ReadonlySet<string>,
+  published: PublicationScan,
 ): TendProposal {
   const status = git(record.path, ["status", "--porcelain=v1", "--untracked-files=normal"]);
   const clean = status.code === 0 && status.stdout.trim() === "";
@@ -493,7 +528,15 @@ function inspectWorktree(
     // published carry head is an ancestor of integration by design. A branch
     // with a remote-tracking counterpart is somebody's carry whatever it is
     // named, so it is protected even when no declaration covers its name.
-    if (model.fork && published.has(record.branch)) {
+    if (model.fork && !published.available) {
+      return {
+        ...base,
+        action: "inspect",
+        reason:
+          `Git could not establish which branches are published, so containment in ${model.trunk} is not sufficient evidence`,
+      };
+    }
+    if (model.fork && published.names.has(record.branch)) {
       return {
         ...base,
         action: "inspect",
@@ -529,24 +572,27 @@ function trunkHead(repository: string, trunk: string): string | null {
 }
 
 function configuredValue(repository: string, key: string): string | null {
-  const result = git(repository, ["config", "--get", key]);
+  const result = git(repository, ["config", "--local", "--get", key]);
   return result.code === 0 ? result.stdout.replace(/\n$/, "") : null;
+}
+
+/** Every value of a multi-valued declaration; empty when the key is absent.
+ * A key a workshop has not converged yet reads as no values, which must behave
+ * exactly as the single-valued world behaved before the key existed.
+ *
+ * NUL-delimited, because a config value may itself contain a newline: splitting
+ * such a value on newlines would read one declaration as two, and a fragment
+ * like `f` used as a prefix holds every branch beginning with it. Values are
+ * taken verbatim — a ref name may contain non-ASCII whitespace that trimming
+ * would silently rewrite into a different branch. */
+function configuredValues(repository: string, key: string): string[] {
+  const result = git(repository, ["config", "--local", "-z", "--get-all", key]);
+  if (result.code !== 0) return [];
+  return result.stdout.split("\0").filter((value) => value !== "");
 }
 
 /** A declared prefix may legitimately be empty — a linear-stack fork carries
  * no carry heads — so an empty declaration is not a missing one. */
-/** Every value of a multi-valued declaration; empty when the key is absent.
- * A key a workshop has not converged yet reads as no values, which must behave
- * exactly as the single-valued world behaved before the key existed. */
-function configuredValues(repository: string, key: string): string[] {
-  const result = git(repository, ["config", "--get-all", key]);
-  if (result.code !== 0) return [];
-  return result.stdout
-    .split("\n")
-    .map((value) => value.trim())
-    .filter((value) => value !== "");
-}
-
 function declaredPrefix(repository: string, key: string): string | null {
   const value = configuredValue(repository, key);
   return value === null || value === "" ? null : value;
@@ -639,7 +685,16 @@ export function surveyWorktrees(
           `the declared workshop ${model.workshop} is missing, so the fork model cannot be reconciled with its specification`,
       });
     }
-    const published = model.fork ? publishedBranchNames(repository) : new Set<string>();
+    const published: PublicationScan = model.fork
+      ? publishedBranchNames(repository)
+      : { names: new Set<string>(), available: true };
+    if (model.fork && !published.available) {
+      issues.push({
+        repository,
+        worktree: null,
+        reason: "Git could not list published branches, so no worktree here is proposed for removal",
+      });
+    }
     const target = trunkHead(repository, model.trunk);
     if (!target) {
       issues.push({
@@ -937,7 +992,7 @@ if (import.meta.main) {
     if (fingerprint === lastFingerprint) return;
     lastFingerprint = fingerprint;
     process.stdout.write(`${JSON.stringify(survey)}\n`);
-    gitWatches.refresh(findRepositories(options.projectRoots), schedule);
+    gitWatches.refresh(findRepositories(options.projectRoots).repositories, schedule);
     if (shouldWake && shouldWakeSelf(options.wakeSelf, survey)) {
       wakeSelf(survey, ownership);
     }
