@@ -90,7 +90,11 @@ else
 fi
 main_branch="${MAINTAIN_MAIN_BRANCH:-main}"
 integration_branch="${MAINTAIN_INTEGRATION_BRANCH:-integration}"
-carry_prefix="${MAINTAIN_CARRY_PREFIX-carry/}"
+carry_prefix_list="${MAINTAIN_CARRY_PREFIX-carry/}"
+carry_refs_list="${MAINTAIN_CARRY_REFS:-}"
+workshop_checkouts_list="${MAINTAIN_WORKSHOP_CHECKOUTS:-}"
+# The first declared prefix is the primary one: what a new carry is named.
+carry_prefix="${carry_prefix_list%% *}"
 quarantine_prefix="${MAINTAIN_QUARANTINE_PREFIX:-DELETEME/}"
 preserve_open_prs="${MAINTAIN_PRESERVE_OPEN_PRS:-1}"
 open_pr_heads_override="${MAINTAIN_OPEN_PR_HEADS_FILE:-}"
@@ -99,14 +103,33 @@ workshop="${MAINTAIN_WORKSHOP:-}"
 case "$main_branch" in */*) die "the mirror branch may not contain a slash: $main_branch" ;; esac
 case "$integration_branch" in */*) die "the integration branch may not contain a slash: $integration_branch" ;; esac
 [ "$main_branch" != "$integration_branch" ] || die "the mirror and integration branches must differ"
-if [ -n "$carry_prefix" ]; then
-    case "$carry_prefix" in */) ;; *) die "the carry prefix must end with a slash: $carry_prefix" ;; esac
-fi
+for prefix in $carry_prefix_list; do
+    case "$prefix" in */) ;; *) die "a carry prefix must end with a slash: $prefix" ;; esac
+done
+for ref in $carry_refs_list; do
+    case "$ref" in */) die "a carry ref is an exact branch name, not a prefix: $ref" ;; esac
+done
 case "$quarantine_prefix" in */) ;; *) die "the quarantine prefix must end with a slash: $quarantine_prefix" ;; esac
-[ "$carry_prefix" != "$quarantine_prefix" ] || die "the carry and quarantine prefixes must differ"
+for prefix in $carry_prefix_list; do
+    [ "$prefix" != "$quarantine_prefix" ] || die "the carry and quarantine prefixes must differ"
+done
 
 # Branch classification by the declared model.
-is_carry() { [ -n "$carry_prefix" ] && [ "${1#"$carry_prefix"}" != "$1" ]; }
+# A carry is any branch under a declared prefix, or one named exactly by a
+# declared ref. The refs exist because a real carry can predate the naming
+# convention: renaming a published branch is a publication, so the model must
+# be able to describe what is there rather than what it wishes were there.
+is_carry() {
+    local candidate="$1" prefix ref
+    for prefix in $carry_prefix_list; do
+        [ -n "$prefix" ] || continue
+        [ "${candidate#"$prefix"}" = "$candidate" ] || return 0
+    done
+    for ref in $carry_refs_list; do
+        [ "$candidate" != "$ref" ] || return 0
+    done
+    return 1
+}
 is_quarantined() { [ "${1#"$quarantine_prefix"}" != "$1" ]; }
 
 # The declaration as data. A tool that must know the shape of the fork asks
@@ -123,6 +146,24 @@ print_model() {
     printf '  "mirror_branch": %s,\n' "$(json_string "$main_branch")"
     printf '  "integration_branch": %s,\n' "$(json_string "$integration_branch")"
     printf '  "carry_prefix": %s,\n' "$(json_string "$carry_prefix")"
+    printf '  "carry_prefixes": ['
+    sep=''
+    for prefix in $carry_prefix_list; do
+        printf '%s%s' "$sep" "$(json_string "$prefix")"; sep=', '
+    done
+    printf '],\n'
+    printf '  "carry_refs": ['
+    sep=''
+    for ref in $carry_refs_list; do
+        printf '%s%s' "$sep" "$(json_string "$ref")"; sep=', '
+    done
+    printf '],\n'
+    printf '  "workshop_checkouts": ['
+    sep=''
+    for path in ${workshop_checkouts_list:-$checkout}; do
+        printf '%s%s' "$sep" "$(json_string "$path")"; sep=', '
+    done
+    printf '],\n'
     printf '  "quarantine_prefix": %s,\n' "$(json_string "$quarantine_prefix")"
     printf '  "fork_repo": %s,\n' "$(json_string "$fork_repo")"
     printf '  "upstream_repo": %s,\n' "$(json_string "$upstream_repo")"
@@ -150,16 +191,64 @@ git -C "$checkout" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
 # so a tool holding only the checkout can resolve its trunk and the branch
 # namespaces this model keeps. Derived state, never a second declaration —
 # --check-supervision is what keeps it honest.
+normalize_words() {
+    local out='' word
+    for word in $1; do out="$out$word "; done
+    printf '%s' "${out% }"
+}
+
+# Multi-valued convergence: replace the whole set every time rather than
+# adding to it, so a value dropped from the declaration disappears from the
+# config instead of lingering as a stale entry nothing declares.
+write_multi() {
+    local repo="$1" key="$2" values="$3" empty_is_a_value="${4:-}" first=1 value
+    git -C "$repo" config --unset-all "$key" 2>/dev/null || true
+    # An empty carry prefix is a real declaration — a linear stack carries no
+    # branches — and must stay distinguishable from a key nobody converged.
+    if [ -z "$(normalize_words "$values")" ] && [ -n "$empty_is_a_value" ]; then
+        git -C "$repo" config --replace-all "$key" ""
+        return 0
+    fi
+    for value in $values; do
+        [ -n "$value" ] || continue
+        if [ "$first" = 1 ]; then
+            git -C "$repo" config --replace-all "$key" "$value"; first=0
+        else
+            git -C "$repo" config --add "$key" "$value"
+        fi
+    done
+}
+
 apply_supervision() {
     git -C "$checkout" config supervisor.trunk "$integration_branch"
     git -C "$checkout" config supervisor.mirror "$main_branch"
-    git -C "$checkout" config supervisor.carryPrefix "$carry_prefix"
+    write_multi "$checkout" supervisor.carryPrefix "$carry_prefix_list" empty-is-a-value
+    write_multi "$checkout" supervisor.carryRef "$carry_refs_list"
     git -C "$checkout" config supervisor.quarantinePrefix "$quarantine_prefix"
+    # The workshop-to-fork direction. Everything above points a checkout at
+    # itself; this points the workshop at every fork it binds, so a tool that
+    # discovers the workshop can follow it to forks nested anywhere without
+    # walking the filesystem for them.
+    if [ -n "$workshop" ] && [ -d "$workshop/.git" ]; then
+        write_multi "$workshop" supervisor.checkout "${workshop_checkouts_list:-$checkout}"
+    fi
     if [ -n "$workshop" ]; then
         git -C "$checkout" config supervisor.workshop "$workshop"
     else
         git -C "$checkout" config --unset-all supervisor.workshop 2>/dev/null || true
     fi
+}
+
+# A multi-valued key matches when the configured set is exactly the declared
+# set, in order. Comparing sets rather than membership is what makes a value
+# nobody declares any more fail here instead of surviving unnoticed.
+
+expect_multi() {
+    local repo="$1" key="$2" want="$3" have declared
+    have=$(normalize_words "$(git -C "$repo" config --get-all "$key" 2>/dev/null | tr '\n' ' ')")
+    declared=$(normalize_words "$want")
+    [ "$have" = "$declared" ] \
+        || die "$repo configures $key=[$have], but the model declares [$declared]; run --configure-supervision"
 }
 
 expect_config() {
@@ -183,10 +272,15 @@ check_spec() {
         || die "$spec does not name the mirror branch $main_branch in its Branch model"
     printf '%s\n' "$section" | grep -Fq -- "$integration_branch" \
         || die "$spec does not name the integration branch $integration_branch in its Branch model"
-    if [ -n "$carry_prefix" ]; then
-        printf '%s\n' "$section" | grep -Fq -- "$carry_prefix" \
-            || die "$spec does not name the carry prefix $carry_prefix in its Branch model"
-    fi
+    for prefix in $carry_prefix_list; do
+        [ -n "$prefix" ] || continue
+        printf '%s\n' "$section" | grep -Fq -- "$prefix" \
+            || die "$spec does not name the carry prefix $prefix in its Branch model"
+    done
+    for ref in $carry_refs_list; do
+        printf '%s\n' "$section" | grep -Fq -- "$ref" \
+            || die "$spec does not name the declared carry head $ref in its Branch model"
+    done
     printf '%s\n' "$section" | grep -Fq -- "$quarantine_prefix" \
         || die "$spec does not name the deletion-marker prefix $quarantine_prefix in its Branch model"
 }
@@ -203,7 +297,11 @@ if [ "$mode" = check-supervision ]; then
     check_spec
     expect_config supervisor.trunk "$integration_branch"
     expect_config supervisor.mirror "$main_branch"
-    expect_config supervisor.carryPrefix "$carry_prefix"
+    expect_multi "$checkout" supervisor.carryPrefix "$carry_prefix_list"
+    expect_multi "$checkout" supervisor.carryRef "$carry_refs_list"
+    if [ -n "$workshop" ] && [ -d "$workshop/.git" ]; then
+        expect_multi "$workshop" supervisor.checkout "${workshop_checkouts_list:-$checkout}"
+    fi
     expect_config supervisor.quarantinePrefix "$quarantine_prefix"
     [ -z "$workshop" ] || expect_config supervisor.workshop "$workshop"
     printf 'Supervision configuration in %s matches the declared model.\n' "$checkout"

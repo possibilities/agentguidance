@@ -11,11 +11,25 @@ That shape is declared once, in the workshop's
   touches nothing.
 - `reconcile-branches.sh --configure-supervision` converges it into the
   bound checkout's own git config — `supervisor.trunk`, `supervisor.mirror`,
-  `supervisor.carryPrefix`, `supervisor.quarantinePrefix`, and
-  `supervisor.workshop` — so a tool holding only the repository can resolve
-  it without finding the workshop, and a linked worktree inherits it for
-  free. `--check-supervision` verifies that convergence and that
-  `MAINTAIN.md` still names the same branches.
+  `supervisor.carryPrefix`, `supervisor.carryRef`,
+  `supervisor.quarantinePrefix`, and `supervisor.workshop` — so a tool holding
+  only the repository can resolve it without finding the workshop, and a
+  linked worktree inherits it for free. `--check-supervision` verifies that
+  convergence and that `MAINTAIN.md` still names the same branches.
+
+  `carryPrefix` and `carryRef` are both multi-valued. A prefix names a
+  namespace; a ref names one exact branch, for a carry that predates the
+  convention — renaming a published branch is a publication, so the model
+  describes what is there rather than what it wishes were there.
+
+  The same run converges `supervisor.checkout` onto the **workshop** repository:
+  one absolute path per bound fork, multi-valued. That is the opposite
+  direction from everything above, and it exists because a fork kept inside its
+  workshop is not reachable by a shallow walk of the project roots. A tool
+  finds the workshop, reads the declaration, and follows it to the forks
+  wherever they sit — including a workshop that binds several. Values are
+  replaced as a set, never added to, so a fork dropped from the declaration
+  disappears rather than lingering as a path nothing declares.
 
 The config is derived state, never a second declaration: converge it rather
 than editing those keys by hand, and treat a repository that answers no
