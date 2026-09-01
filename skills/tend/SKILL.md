@@ -80,6 +80,11 @@ prose, never a fetch, never a guess. Every declaration is optional, and a
 workshop that has converged none of them is read exactly as it was before they
 existed.
 
+Only the repository's own config is read — `--local`, never the global or
+system scope. A declaration converged anywhere else is invisible, and that is
+deliberate: read at the default scope, one stray `supervisor.trunk` in a
+user's `~/.gitconfig` would make every repository on the machine a fork.
+
 In such a repository the mirror branch, the integration branch, every branch
 under any declared carry prefix, every declared carry ref, and every deletion
 marker are `inspect` and never `remove_worktree`, whatever ancestry says. A published carry head is an ancestor of integration by design, so
