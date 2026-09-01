@@ -16,8 +16,22 @@ export interface AgentSnapshot {
 
 export type ProposalAction =
   | "remove_worktree"
-  | "catch_up_to_main"
+  | "catch_up_to_trunk"
   | "inspect";
+
+/** How a repository says it is shaped. An ordinary repository answers
+ * nothing and is judged against local main; a fork checkout carries its
+ * workshop's declared model in its own `supervisor.*` config, converged
+ * there by the maintain skill's reconcile-branches.sh. Tend reads that
+ * config and never the workshop's prose. */
+export interface RepositoryModel {
+  trunk: string;
+  mirror: string | null;
+  carry_prefix: string | null;
+  quarantine_prefix: string | null;
+  workshop: string | null;
+  fork: boolean;
+}
 
 export interface TendProposal {
   action: ProposalAction;
@@ -26,7 +40,9 @@ export interface TendProposal {
   worktree: string;
   branch: string | null;
   head: string;
-  main_head: string;
+  trunk: string;
+  trunk_head: string;
+  fork_model: boolean;
   ahead: number;
   behind: number;
   clean: boolean;
@@ -41,13 +57,14 @@ export interface TendIssue {
 }
 
 export interface TendSurvey {
-  schema_version: 1;
+  schema_version: 2;
   type: "tend_survey";
   occasion: "snapshot" | "start" | "change";
   generated_at: string;
   ownership_available: boolean;
   counts: {
     repositories: number;
+    linked_worktrees: number;
     herdr_worktrees: number;
     protected_by_agent: number;
     proposals: number;
@@ -72,7 +89,11 @@ interface WorktreeRecord {
 
 export interface SurveyOptions {
   projectRoots: string[];
-  worktreeRoot: string;
+  /** Optional location restriction. Empty means every linked worktree a
+   * discovered repository registers, wherever it lives; a non-empty list keeps
+   * only worktrees below one of these roots. The main checkout is never a
+   * candidate either way. */
+  worktreeRoots: readonly string[];
   ownership?: AgentSnapshot;
   sessionSlugs?: Readonly<Record<string, string>>;
   herdrBin?: string;
@@ -153,12 +174,24 @@ function candidateDirectories(root: string): string[] {
   return candidates;
 }
 
+/** Name a repository by its main worktree. A fork checkout is commonly first
+ * reached through one of its own linked worktrees, and reporting that sibling
+ * directory would name the wrong place to a human deciding lifecycle work. */
+function mainWorktreeFor(commonDir: string, fallback: string): string {
+  const suffix = "/.git";
+  if (!commonDir.endsWith(suffix)) return fallback;
+  const parent = commonDir.slice(0, -suffix.length);
+  return existsSync(parent) ? normalize(parent) : fallback;
+}
+
 export function findRepositories(projectRoots: readonly string[]): string[] {
   const byCommonDir = new Map<string, string>();
   for (const root of projectRoots) {
     for (const candidate of candidateDirectories(root)) {
       const commonDir = resolveCommonDir(candidate);
-      if (commonDir && !byCommonDir.has(commonDir)) byCommonDir.set(commonDir, normalize(candidate));
+      if (commonDir && !byCommonDir.has(commonDir)) {
+        byCommonDir.set(commonDir, mainWorktreeFor(commonDir, normalize(candidate)));
+      }
     }
   }
   return [...byCommonDir.values()].sort();
@@ -223,29 +256,44 @@ function conversationSlug(agent: JsonObject): string | null {
     : null;
 }
 
-function worktreeRootForAgentPath(path: string, worktreeRoot: string): string | null {
-  const rel = relative(normalize(worktreeRoot), normalize(path));
-  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
-  const parts = rel.split(/[\\/]+/);
-  return parts.length >= 2 ? normalize(join(worktreeRoot, parts[0]!, parts[1]!)) : null;
-}
-
 /** Keep the human-facing conversation identity after its live agent row
  * disappears. The long-running watcher owns this in memory; no repository or
- * worktree metadata is written. */
+ * worktree metadata is written.
+ *
+ * Keyed by the agent's own directory rather than by a worktree derived from a
+ * path layout: a worktree is only known to be one once Git names it, and
+ * worktrees live wherever they were created, not only two segments below a
+ * Herdr root. `slugForWorktree` resolves the key against a real worktree. */
 export function rememberSessionSlugs(
   remembered: Record<string, string>,
   agents: readonly JsonObject[],
-  worktreeRoot: string,
 ): void {
   for (const agent of agents) {
     const slug = conversationSlug(agent);
     if (!slug) continue;
     for (const path of agentPaths(agent)) {
-      const worktree = worktreeRootForAgentPath(path, worktreeRoot);
-      if (worktree) remembered[worktree] = slug;
+      remembered[normalize(path)] = slug;
     }
   }
+}
+
+/** The slug remembered for the deepest agent directory inside this worktree.
+ * Deepest wins so a nested worktree keeps its own identity rather than
+ * inheriting the enclosing one's. */
+export function slugForWorktree(
+  remembered: Readonly<Record<string, string>>,
+  worktree: string,
+): string | null {
+  let bestPath: string | null = null;
+  let bestSlug: string | null = null;
+  for (const [path, slug] of Object.entries(remembered)) {
+    if (!pathIsWithin(path, worktree)) continue;
+    if (bestPath === null || path.length > bestPath.length) {
+      bestPath = path;
+      bestSlug = slug;
+    }
+  }
+  return bestSlug;
 }
 
 export function queryAgents(herdrBin = process.env.HERDR_BIN_PATH ?? "herdr"): AgentSnapshot {
@@ -277,12 +325,12 @@ export function queryAgents(herdrBin = process.env.HERDR_BIN_PATH ?? "herdr"): A
   }
 }
 
-function aheadBehind(worktree: string): { ahead: number; behind: number } | null {
+function aheadBehind(worktree: string, trunk: string): { ahead: number; behind: number } | null {
   const result = git(worktree, [
     "rev-list",
     "--left-right",
     "--count",
-    "refs/heads/main...HEAD",
+    `refs/heads/${trunk}...HEAD`,
   ]);
   if (result.code !== 0) return null;
   const [behindText, aheadText] = result.stdout.trim().split(/\s+/);
@@ -294,19 +342,22 @@ function aheadBehind(worktree: string): { ahead: number; behind: number } | null
 function inspectWorktree(
   repository: string,
   record: WorktreeRecord,
-  mainHead: string,
+  trunkHead: string,
+  model: RepositoryModel,
   sessionSlug: string | null,
 ): TendProposal {
   const status = git(record.path, ["status", "--porcelain=v1", "--untracked-files=normal"]);
   const clean = status.code === 0 && status.stdout.trim() === "";
-  const counts = aheadBehind(record.path) ?? { ahead: 0, behind: 0 };
+  const counts = aheadBehind(record.path, model.trunk) ?? { ahead: 0, behind: 0 };
   const base = {
     session_slug: sessionSlug,
     repository,
     worktree: record.path,
     branch: record.branch,
     head: record.head,
-    main_head: mainHead,
+    trunk: model.trunk,
+    trunk_head: trunkHead,
+    fork_model: model.fork,
     ahead: counts.ahead,
     behind: counts.behind,
     clean,
@@ -322,49 +373,96 @@ function inspectWorktree(
   if (!clean) {
     return { ...base, action: "inspect", reason: "the worktree has uncommitted changes" };
   }
-  if (record.branch === "main") {
-    return { ...base, action: "inspect", reason: "the linked worktree has main checked out" };
+  const held = heldByModel(record.branch, model);
+  if (held) {
+    return {
+      ...base,
+      action: "inspect",
+      reason: `the worktree holds ${held}`,
+    };
   }
 
   const contained = git(record.path, [
     "merge-base",
     "--is-ancestor",
     "HEAD",
-    "refs/heads/main",
+    `refs/heads/${model.trunk}`,
   ]).code === 0;
   if (contained) {
     return {
       ...base,
       action: "remove_worktree",
-      reason: "the clean worktree HEAD is contained in local main",
+      reason: `the clean worktree HEAD is contained in local ${model.trunk}`,
     };
   }
   if (counts.ahead > 0 && counts.behind > 0) {
     return {
       ...base,
-      action: "catch_up_to_main",
-      reason: "the clean branch has commits on both sides of local main",
+      action: "catch_up_to_trunk",
+      reason: `the clean branch has commits on both sides of local ${model.trunk}`,
     };
   }
   return {
     ...base,
     action: "inspect",
     reason: counts.ahead > 0
-      ? "the inactive branch has commits not in local main"
+      ? `the inactive branch has commits not in local ${model.trunk}`
       : "Git could not establish a conservative lifecycle action",
   };
 }
 
-function mainHead(repository: string): string | null {
-  const result = git(repository, ["rev-parse", "--verify", "refs/heads/main"]);
+function trunkHead(repository: string, trunk: string): string | null {
+  const result = git(repository, ["rev-parse", "--verify", `refs/heads/${trunk}`]);
   return result.code === 0 ? result.stdout.trim() : null;
 }
 
-function configuredNonMainTrunk(repository: string): string | null {
-  const result = git(repository, ["config", "--get", "supervisor.trunk"]);
-  if (result.code !== 0) return null;
-  const branch = result.stdout.trim();
-  return branch && branch !== "main" ? branch : null;
+function configuredValue(repository: string, key: string): string | null {
+  const result = git(repository, ["config", "--get", key]);
+  return result.code === 0 ? result.stdout.replace(/\n$/, "") : null;
+}
+
+/** A declared prefix may legitimately be empty — a linear-stack fork carries
+ * no carry heads — so an empty declaration is not a missing one. */
+function declaredPrefix(repository: string, key: string): string | null {
+  const value = configuredValue(repository, key);
+  return value === null || value === "" ? null : value;
+}
+
+export function resolveModel(repository: string): RepositoryModel {
+  const trunk = configuredValue(repository, "supervisor.trunk")?.trim() ?? "";
+  if (!trunk) {
+    return {
+      trunk: "main",
+      mirror: null,
+      carry_prefix: null,
+      quarantine_prefix: null,
+      workshop: null,
+      fork: false,
+    };
+  }
+  return {
+    trunk,
+    mirror: configuredValue(repository, "supervisor.mirror")?.trim() || null,
+    carry_prefix: declaredPrefix(repository, "supervisor.carryPrefix"),
+    quarantine_prefix: declaredPrefix(repository, "supervisor.quarantinePrefix"),
+    workshop: configuredValue(repository, "supervisor.workshop")?.trim() || null,
+    fork: true,
+  };
+}
+
+/** Branches the declared model keeps. Their worktrees are the fork's standing
+ * working set, so containment in the trunk is not evidence they are finished:
+ * a published carry head is an ancestor of integration by design. */
+function heldByModel(branch: string, model: RepositoryModel): string | null {
+  if (branch === model.trunk) return `the declared integration branch ${model.trunk}`;
+  if (model.mirror && branch === model.mirror) return `the declared mirror branch ${model.mirror}`;
+  if (model.carry_prefix && branch.startsWith(model.carry_prefix)) {
+    return `a carried feature under the declared prefix ${model.carry_prefix}`;
+  }
+  if (model.quarantine_prefix && branch.startsWith(model.quarantine_prefix)) {
+    return `an explicit deletion marker under ${model.quarantine_prefix}`;
+  }
+  return null;
 }
 
 export function surveyWorktrees(
@@ -375,6 +473,7 @@ export function surveyWorktrees(
   const ownership = options.ownership ?? queryAgents(options.herdrBin);
   const proposals: TendProposal[] = [];
   const issues: TendIssue[] = [];
+  let linkedWorktrees = 0;
   let herdrWorktrees = 0;
   let protectedByAgent = 0;
 
@@ -386,24 +485,37 @@ export function surveyWorktrees(
     });
   }
 
+  const herdrRoot = normalize(join(homedir(), ".herdr", "worktrees"));
   for (const repository of repositories) {
-    const worktrees = listWorktrees(repository).filter((record) =>
-      pathIsWithin(record.path, options.worktreeRoot)
-    );
-    herdrWorktrees += worktrees.length;
+    const worktrees = listWorktrees(repository).filter((record) => {
+      // The main checkout is never a lifecycle candidate. It was previously
+      // excluded only as a side effect of the Herdr-root filter, so it has to
+      // be excluded on its own now that worktrees anywhere are considered.
+      if (normalize(record.path) === normalize(repository)) return false;
+      return options.worktreeRoots.length === 0 ||
+        options.worktreeRoots.some((root) => pathIsWithin(record.path, root));
+    });
+    linkedWorktrees += worktrees.length;
+    herdrWorktrees += worktrees.filter((record) => pathIsWithin(record.path, herdrRoot)).length;
     if (worktrees.length === 0) continue;
-    const nonMainTrunk = configuredNonMainTrunk(repository);
-    if (nonMainTrunk) {
+    const model = resolveModel(repository);
+    if (model.fork && model.workshop && !existsSync(model.workshop)) {
       issues.push({
         repository,
         worktree: null,
-        reason: `repository integrates into ${nonMainTrunk}, not main; Tend will not infer lifecycle actions`,
+        reason:
+          `the declared workshop ${model.workshop} is missing, so the fork model cannot be reconciled with its specification`,
       });
-      continue;
     }
-    const target = mainHead(repository);
+    const target = trunkHead(repository, model.trunk);
     if (!target) {
-      issues.push({ repository, worktree: null, reason: "repository has no local main branch" });
+      issues.push({
+        repository,
+        worktree: null,
+        reason: model.fork
+          ? `repository declares ${model.trunk} as its trunk but has no such local branch`
+          : "repository has no local main branch",
+      });
       continue;
     }
     for (const record of worktrees) {
@@ -416,7 +528,8 @@ export function surveyWorktrees(
         repository,
         record,
         target,
-        options.sessionSlugs?.[normalize(record.path)] ?? null,
+        model,
+        slugForWorktree(options.sessionSlugs ?? {}, record.path),
       ));
     }
   }
@@ -432,13 +545,14 @@ export function surveyWorktrees(
     )
   );
   return {
-    schema_version: 1,
+    schema_version: 2,
     type: "tend_survey",
     occasion,
     generated_at: new Date().toISOString(),
     ownership_available: ownership.available,
     counts: {
       repositories: repositories.length,
+      linked_worktrees: linkedWorktrees,
       herdr_worktrees: herdrWorktrees,
       protected_by_agent: protectedByAgent,
       proposals: proposals.length,
@@ -629,7 +743,7 @@ function parseOptions(argv: string[]): WatchOptions {
     args: argv,
     options: {
       "project-root": { type: "string", multiple: true },
-      "worktree-root": { type: "string" },
+      "worktree-root": { type: "string", multiple: true },
       socket: { type: "string" },
       "sweep-interval": { type: "string" },
       once: { type: "boolean", default: false },
@@ -639,12 +753,12 @@ function parseOptions(argv: string[]): WatchOptions {
     strict: true,
   });
   if (parsed.values.help) {
-    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH] [--socket PATH] [--sweep-interval SECONDS]\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits.\n`);
+    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH]... [--socket PATH] [--sweep-interval SECONDS]\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits.\n`);
     process.exit(0);
   }
   return {
     projectRoots: (parsed.values["project-root"] ?? [join(homedir(), "code"), join(homedir(), "src")]).map(normalize),
-    worktreeRoot: normalize(parsed.values["worktree-root"] ?? join(homedir(), ".herdr", "worktrees")),
+    worktreeRoots: (parsed.values["worktree-root"] ?? []).map(normalize),
     socketPath: normalize(parsed.values.socket ?? defaultSocketPath()),
     sweepIntervalSeconds: parseSeconds(parsed.values["sweep-interval"]),
     once: parsed.values.once ?? false,
@@ -679,7 +793,7 @@ if (import.meta.main) {
   };
   publish = (occasion: TendSurvey["occasion"], shouldWake: boolean) => {
     const ownership = queryAgents(options.herdrBin);
-    rememberSessionSlugs(rememberedSessionSlugs, ownership.agents, options.worktreeRoot);
+    rememberSessionSlugs(rememberedSessionSlugs, ownership.agents);
     const survey = surveyWorktrees({
       ...options,
       ownership,

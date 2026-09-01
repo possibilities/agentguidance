@@ -1,6 +1,6 @@
 ---
 name: tend
-description: Watch Herdr-created Git worktrees after their agents stop, then notify the human with a read-only minisketch for removing landed worktrees, catching divergent branches up to local main, or inspecting ambiguous leftovers. Use for /tend or when asked to watch and triage inactive agent worktrees; it proposes lifecycle work but does not perform it.
+description: Watch inactive Git worktrees after their agents stop, wherever those worktrees live, then notify the human with a read-only minisketch for removing landed worktrees, catching divergent branches up to their repository's trunk, or inspecting ambiguous leftovers. Reads a carried fork's declared branch model from its own supervisor config, so an integration-based repository is judged against integration and its carry heads are never proposed for removal. Use for /tend or when asked to watch and triage inactive agent worktrees; it proposes lifecycle work but does not perform it.
 disable-model-invocation: true
 ---
 
@@ -24,8 +24,8 @@ bun scripts/watch.ts --once
 ```
 
 The one JSON object is the current `tend_survey`. Git answers which linked
-worktrees exist and how each branch relates to its repository's local `main`;
-Herdr answers whether any agent is still in one. Each proposal's
+worktrees exist and how each branch relates to its repository's declared
+trunk; Herdr answers whether any agent is still in one. Each proposal's
 `session_slug` is Herdr's generated conversation name from
 `tokens.conversation`, retained by the long-running watcher after that agent
 exits. Treat `ownership_available: false` as a failed safety check, never as an
@@ -35,22 +35,51 @@ Every agent row whose `cwd` or `foreground_cwd` is the worktree or lies inside
 it protects that worktree. Status does not weaken the protection: `idle`,
 `done`, `blocked`, `working`, and `unknown` all mean an agent is still there.
 
-The helper only considers linked worktrees below
-`~/.herdr/worktrees`. Its proposals are deliberately conservative:
+The helper considers every linked worktree its repositories register, wherever
+that worktree lives: below `~/.herdr/worktrees`, in a fan-out under
+`~/worktrees`, on a Scratch volume, beside the checkout in `~/src`. A worktree
+is a lifecycle candidate because Git registers it and no agent is in it, not
+because of where it sits, and a directory Herdr never created still becomes a
+forgotten directory. Pass `--worktree-root PATH` (repeatable) to restrict the
+survey to particular roots; `counts.linked_worktrees` is the whole considered
+set and `counts.herdr_worktrees` the Herdr-managed part of it.
 
-- `remove_worktree` — clean, inactive, on a branch other than `main`, and the
-  worktree HEAD is already contained in local `main`. The branch is explicitly
-  retained. This includes a worktree where no commit was ever made.
-- `catch_up_to_main` — clean and inactive, with commits on both sides of local
-  `main`. The proposed operation is a rebase in that worktree, never an update
-  to `main`.
-- `inspect` — inactive but dirty, detached, ahead-only, or otherwise too
-  ambiguous for either proposal above.
+A repository's main checkout is never a candidate, whatever its ancestry says.
 
-No local `main` means no ancestry decision. A repository with the existing
-`supervisor.trunk` configuration set to a non-`main` branch is also outside
-Tend's main-based policy. Report either issue; do not substitute a remote ref,
-fetch, or guess another trunk.
+Its proposals are deliberately conservative:
+
+- `remove_worktree` — clean, inactive, on a branch the declared model does not
+  keep, and the worktree HEAD is already contained in the local trunk. The
+  branch is explicitly retained. This includes a worktree where no commit was
+  ever made.
+- `catch_up_to_trunk` — clean and inactive, with commits on both sides of the
+  local trunk. The proposed operation is a rebase in that worktree, never an
+  update to the trunk.
+- `inspect` — inactive but dirty, detached, ahead-only, holding a branch the
+  declared model keeps, or otherwise too ambiguous for either proposal above.
+
+Each proposal carries the `trunk` it was judged against and `fork_model`,
+which says whether that trunk came from a declared fork model or from the
+ordinary `main` default.
+
+## Repositories that carry a fork
+
+<!-- fragment: fork-supervision.md -->
+
+Tend reads that config and nothing else: never a workshop's prose, never a
+remote ref, never a guess. In such a repository the mirror branch, the
+integration branch, every branch under the declared carry prefix, and every
+deletion marker are `inspect` and never `remove_worktree`, whatever ancestry
+says. A published carry head is an ancestor of integration by design, so
+containment there is not evidence that its worktree is finished — those
+worktrees are the fork's standing working set, and integration and
+publication belong to `maintain`.
+
+A missing local trunk means no ancestry decision, and so does a declared
+trunk with no such local branch. A declared workshop that is not on disk is
+reported too: the model can no longer be reconciled with the specification it
+was derived from. Report these issues; do not substitute a remote ref, fetch,
+or guess another trunk.
 
 ## Notify and minisketch
 
@@ -62,10 +91,10 @@ therefore blind, load the `notify` skill and post one grouped notification
 ## Tend
 
 - Remove `<session-slug>` (`<repository>`, worktree `<worktree>`); `<branch>` at
-  `<short-head>` is clean and contained in local `main` at `<short-main>`. The
-  branch will be retained.
+  `<short-head>` is clean and contained in local `<trunk>` at `<short-trunk>`.
+  The branch will be retained.
 - Catch up `<session-slug>` (`<repository>`, worktree `<worktree>`) by rebasing
-  `<branch>` onto local `main`; it is `<ahead>` ahead and `<behind>` behind,
+  `<branch>` onto local `<trunk>`; it is `<ahead>` ahead and `<behind>` behind,
   clean, and has no live Herdr agent.
 - Inspect `<session-slug>` (`<repository>`, worktree `<worktree>`) before
   lifecycle work: `<reason>`.
@@ -77,9 +106,10 @@ Use one bullet per proposal and always lead with `session_slug`; the random
 worktree name is only parenthetical location context for that named session.
 Never substitute the worktree name for a missing slug: identify it as an older
 unattributed session and include the repository, branch, and worktree only as
-diagnostic context. Include the evidence the helper returned, and say plainly
-when ownership was unavailable or a repository could not be assessed. Do not
-inflate an empty survey into a report: say there is nothing to tend.
+diagnostic context. Include the evidence the helper returned, name the trunk
+a fork repository was judged against rather than implying `main`, and say
+plainly when ownership was unavailable or a repository could not be assessed.
+Do not inflate an empty survey into a report: say there is nothing to tend.
 
 This first version ends at the minisketch. A later explicit request to carry
 out one of its bullets is new work under the session's ordinary approval and
