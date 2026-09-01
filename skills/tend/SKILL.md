@@ -45,14 +45,13 @@ survey to particular roots; `counts.linked_worktrees` is the whole considered
 set and `counts.herdr_worktrees` the Herdr-managed part of it.
 
 Repositories are found one level below each project root, and then through
-every checkout those repositories declare in `supervisor.checkout` — a fork
-kept inside its workshop at `<workshop>/fork/<name>` is deeper than the walk
-reaches, and deepening the walk would drag in every vendored repository on the
-machine. Declarations are followed to a fixed point and deduped by Git common
-directory, so one workshop may bind several forks and a fork reached both ways
-is one repository. A declared checkout that is relative, absent, or not a
-repository is reported as an issue rather than skipped silently. The key is
-optional: absent, discovery is the plain walk it always was.
+every checkout those repositories declare in `supervisor.checkout` — the fork
+a workshop keeps inside itself is deeper than that walk reaches. Declarations
+are followed to a fixed point and deduped by Git common directory, so one
+workshop may bind several forks and a fork reached both ways is one
+repository. A declared checkout that is relative, absent, or not a repository
+is reported as an issue rather than skipped silently. The key is optional:
+absent, discovery is the plain walk it always was.
 
 A repository's main checkout is never a candidate, whatever its ancestry says.
 
@@ -77,11 +76,8 @@ ordinary `main` default.
 <!-- fragment: fork-supervision.md -->
 
 The branch model comes from that config and nothing else: never a workshop's
-prose, never a fetch, never a guess. `supervisor.carryPrefix` is read as
-multi-valued, because a fork may carry features under more than one namespace,
-and `supervisor.carryRef` names exact carry branches that live under no prefix
-at all — the case where a published carry cannot be renamed yet. Both are
-optional; a workshop that has converged neither is read exactly as before they
+prose, never a fetch, never a guess. Every declaration is optional, and a
+workshop that has converged none of them is read exactly as it was before they
 existed.
 
 In such a repository the mirror branch, the integration branch, every branch
