@@ -644,6 +644,29 @@ describe("Tend survey", () => {
     }
   });
 
+  test("a declared checkout keeps a path Git may legally hand back untrimmed", () => {
+    // A checkout value is a filesystem path, where trailing whitespace is
+    // significant and which git config preserves by quoting. Trimming any
+    // path Git returns — the declaration, or `rev-parse --show-toplevel`
+    // used to validate it — drops the fork from the survey and reports a
+    // reason that is false: the path is on disk, the read mangled it.
+    const { projects, repository: workshop } = fixture();
+    const bound = join(workshop, "fork", "bound ");
+    run(workshop, "mkdir", ["-p", bound]);
+    git(bound, "init", "-b", "main");
+    git(bound, "config", "user.name", "Tend Test");
+    git(bound, "config", "user.email", "tend@example.test");
+    writeFileSync(join(bound, "file.txt"), "initial\n");
+    git(bound, "add", "file.txt");
+    git(bound, "commit", "-m", "initial");
+    git(workshop, "config", "--add", "supervisor.checkout", bound);
+
+    const declared = findRepositories([projects]);
+
+    expect(declared.issues).toEqual([]);
+    expect(declared.repositories).toContain(realpathSync.native(bound));
+  });
+
   test("a declared checkout may name a linked worktree root", () => {
     // Root-ness is the test, not main-checkout-ness: a linked worktree is a
     // real checkout, and resolves to the repository it belongs to.

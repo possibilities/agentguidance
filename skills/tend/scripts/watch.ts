@@ -158,10 +158,18 @@ function git(cwd: string, args: string[]): CommandResult {
   return run("git", ["-C", cwd, ...args]);
 }
 
+/** Strip the newline Git terminates its output with, and nothing else.
+ * Trimming whitespace corrupts the two things Git hands back that may legally
+ * carry it: a filesystem path ending in a space, and a ref name containing
+ * non-ASCII whitespace. Only counts and object ids are safe to trim. */
+function chomp(text: string): string {
+  return text.replace(/\r?\n$/, "");
+}
+
 function resolveCommonDir(checkout: string): string | null {
   const result = git(checkout, ["rev-parse", "--git-common-dir"]);
   if (result.code !== 0) return null;
-  const value = result.stdout.trim();
+  const value = chomp(result.stdout);
   return normalize(isAbsolute(value) ? value : join(checkout, value));
 }
 
@@ -173,13 +181,13 @@ function resolveCommonDir(checkout: string): string | null {
  * path only for a real checkout or a linked worktree. */
 function isCheckoutRoot(path: string): boolean {
   const top = git(path, ["rev-parse", "--show-toplevel"]);
-  if (top.code === 0) return normalize(top.stdout.trim()) === normalize(path);
+  if (top.code === 0) return normalize(chomp(top.stdout)) === normalize(path);
   // A bare repository has no work tree and so no toplevel, but it is still a
   // checkout root when the repository it names is the path itself.
   const bare = git(path, ["rev-parse", "--is-bare-repository"]);
   if (bare.code !== 0 || bare.stdout.trim() !== "true") return false;
   const gitDir = git(path, ["rev-parse", "--absolute-git-dir"]);
-  return gitDir.code === 0 && normalize(gitDir.stdout.trim()) === normalize(path);
+  return gitDir.code === 0 && normalize(chomp(gitDir.stdout)) === normalize(path);
 }
 
 function candidateDirectories(root: string): string[] {
@@ -573,7 +581,7 @@ function trunkHead(repository: string, trunk: string): string | null {
 
 function configuredValue(repository: string, key: string): string | null {
   const result = git(repository, ["config", "--local", "--get", key]);
-  return result.code === 0 ? result.stdout.replace(/\n$/, "") : null;
+  return result.code === 0 ? chomp(result.stdout) : null;
 }
 
 /** Every value of a multi-valued declaration; empty when the key is absent.
@@ -599,7 +607,7 @@ function declaredPrefix(repository: string, key: string): string | null {
 }
 
 export function resolveModel(repository: string): RepositoryModel {
-  const trunk = configuredValue(repository, "supervisor.trunk")?.trim() ?? "";
+  const trunk = configuredValue(repository, "supervisor.trunk") ?? "";
   if (!trunk) {
     return {
       trunk: "main",
@@ -613,11 +621,11 @@ export function resolveModel(repository: string): RepositoryModel {
   }
   return {
     trunk,
-    mirror: configuredValue(repository, "supervisor.mirror")?.trim() || null,
+    mirror: configuredValue(repository, "supervisor.mirror") || null,
     carry_prefixes: configuredValues(repository, "supervisor.carryPrefix"),
     carry_refs: configuredValues(repository, "supervisor.carryRef"),
     quarantine_prefix: declaredPrefix(repository, "supervisor.quarantinePrefix"),
-    workshop: configuredValue(repository, "supervisor.workshop")?.trim() || null,
+    workshop: configuredValue(repository, "supervisor.workshop") || null,
     fork: true,
   };
 }
