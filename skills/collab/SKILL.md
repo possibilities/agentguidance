@@ -1,6 +1,7 @@
 ---
 name: collab
 description: Route any request to the right kind of response with a human in the loop — classify it, investigate, answer in the right shape, sketch substantial work for approval, then build.
+disable-model-invocation: true
 ---
 
 # Collab

@@ -48,7 +48,7 @@ explicit_model_skills=$(
     done | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'
 )
 [ "$explicit_model_skills" = \
-    "build maintain tend" ] \
+    "build collab maintain tend" ] \
     || fail "explicit-only skill policy drifted: $explicit_model_skills"
 
 [ -x skills/tend/scripts/watch.ts ] \

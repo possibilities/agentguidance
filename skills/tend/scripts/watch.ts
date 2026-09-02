@@ -30,6 +30,7 @@ export interface ProcessSnapshot {
 
 export type ProposalAction =
   | "remove_worktree"
+  | "catch_up_and_remove"
   | "catch_up_to_trunk"
   | "inspect";
 
@@ -629,10 +630,45 @@ function inspectWorktree(
     };
   }
   if (counts.ahead > 0 && counts.behind > 0) {
+    const collapses = catchUpCollapsesToTrunk(record.path, model.trunk);
+    const bothSides = `the clean branch has commits on both sides of local ${model.trunk}`;
+    if (collapses === true) {
+      // The catch-up would leave this worktree in exactly the state that earns
+      // `remove_worktree` above: clean, inactive, contained. So the removal
+      // half has to clear the same publication backstop that path clears —
+      // a published branch keeps its worktree whatever the rebase would do.
+      if (!published.available) {
+        return {
+          ...base,
+          action: "catch_up_to_trunk",
+          reason:
+            `${bothSides}, and the catch-up would collapse it onto ${model.trunk}, but Git could not ` +
+            "establish which branches are published, so the worktree is not also proposed for removal",
+        };
+      }
+      if (published.names.has(record.branch)) {
+        return {
+          ...base,
+          action: "catch_up_to_trunk",
+          reason:
+            `${bothSides}, and the catch-up would collapse it onto ${model.trunk}, but the branch is ` +
+            "published on a remote, so the worktree is not also proposed for removal",
+        };
+      }
+      return {
+        ...base,
+        action: "catch_up_and_remove",
+        reason:
+          `${bothSides}, but every commit it carries is already upstream, so the catch-up replays ` +
+          `nothing: it leaves the branch at ${model.trunk} and the worktree clean and contained`,
+      };
+    }
     return {
       ...base,
       action: "catch_up_to_trunk",
-      reason: `the clean branch has commits on both sides of local ${model.trunk}`,
+      reason: collapses === null
+        ? `${bothSides}; Git could not establish whether the catch-up would collapse it onto ${model.trunk}`
+        : bothSides,
     };
   }
   return {
@@ -642,6 +678,30 @@ function inspectWorktree(
       ? `the inactive branch has commits not in local ${model.trunk}`
       : "Git could not establish a conservative lifecycle action",
   };
+}
+
+/** Whether the catch-up rebase would replay nothing and leave the branch
+ * sitting on trunk. Git's own already-upstream filter answers it without
+ * touching the worktree: `--cherry-pick --right-only` drops every commit whose
+ * patch already has an equivalent on the trunk side, and a non-interactive
+ * rebase flattens merges away, so an empty list is exactly the case where the
+ * rebase ends at trunk. A branch whose commits landed upstream by some other
+ * route — squashed, or reworked so the patch no longer matches — reads as not
+ * collapsing and keeps the plain catch-up proposal. That is the safe
+ * direction: this must never claim a rebase is a formality when it would
+ * really stop on a conflict. Null when Git could not answer at all. */
+function catchUpCollapsesToTrunk(worktree: string, trunk: string): boolean | null {
+  const result = git(worktree, [
+    "rev-list",
+    "--count",
+    "--no-merges",
+    "--cherry-pick",
+    "--right-only",
+    `refs/heads/${trunk}...HEAD`,
+  ]);
+  if (result.code !== 0) return null;
+  const count = Number.parseInt(result.stdout.trim(), 10);
+  return Number.isNaN(count) ? null : count === 0;
 }
 
 function trunkHead(repository: string, trunk: string): string | null {
