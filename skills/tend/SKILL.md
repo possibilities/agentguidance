@@ -90,14 +90,27 @@ underneath a process without a human having looked. `counts.downgraded_by_proces
 says how often that happened; a non-zero count is worth reading as a question
 about the roster, not only about the worktrees.
 
-The helper considers every linked worktree its repositories register, wherever
-that worktree lives: below `~/.herdr/worktrees`, in a fan-out under
-`~/worktrees`, on a Scratch volume, beside the checkout in `~/src`. A worktree
-is a lifecycle candidate because Git registers it and no agent is in it, not
-because of where it sits, and a directory Herdr never created still becomes a
-forgotten directory. Pass `--worktree-root PATH` (repeatable) to restrict the
-survey to particular roots; `counts.linked_worktrees` is the whole considered
-set and `counts.herdr_worktrees` the Herdr-managed part of it.
+The helper considers every linked worktree its repositories register below the
+home directory, wherever under it that worktree lives: in `~/.herdr/worktrees`,
+in a fan-out under `~/worktrees`, beside the checkout in `~/src`. A worktree is
+a lifecycle candidate because Git registers it and no agent is in it, not
+because of which of those directories it sits in, and a directory Herdr never
+created still becomes a forgotten directory.
+
+Home is the boundary because what lies outside it is transient by
+construction rather than forgotten. A checkout under the system temp dir is an
+installer's working copy that will delete itself; one on a removable volume
+disappears and returns with the volume, and every worktree on it would read as
+appearing and vanishing rather than as anything a human should decide about.
+Neither is a directory anyone loses track of, which is the whole subject of
+this skill. The cost is real and worth stating: a genuinely long-lived
+worktree parked on such a volume is now invisible to the walk, and tend will
+never mention it. Pass `--worktree-root PATH` (repeatable) to survey those
+roots instead — it replaces the home default outright rather than adding to
+it — and `--worktree PATH` to judge one exact path, which ignores the
+restriction entirely because a caller gating a removal must never read "no
+proposal" as "nothing to worry about". `counts.linked_worktrees` is the whole
+considered set and `counts.herdr_worktrees` the Herdr-managed part of it.
 
 Repositories are found one level below each project root, and then through
 every checkout those repositories declare in `supervisor.checkout` — the fork
@@ -311,7 +324,18 @@ bun scripts/watch.ts --wake-self
 Do not raw-background it. Its first stdout record is the initial survey. It
 then watches Git worktree registrations and loose branch refs, subscribes to
 Herdr pane/workspace lifecycle events, and performs a five-minute recovery
-sweep. It emits only when the actionable picture changes.
+sweep. It emits only when the actionable picture changes, and "actionable" is
+narrower than "different": a record is compared on the judgement and the
+worktree's content — its action, its `reason_code`, any `downgrade`, its
+branch, HEAD, trunk, ahead/behind, cleanliness, `state_digest` and unrecognized
+ignored content. Evidence that moves on its own is deliberately excluded, and
+each exclusion is a wake that would otherwise be spurious:
+`last_activity_seconds` is a clock and advances every sweep, the `reason` prose
+interpolates the pid of a short-lived helper and the quiet-window count, and
+`session_slug` follows roster rows that come and go. That is why the judgement
+carries a `reason_code` beside the prose at all — a proposal changing category
+under an unchanged `inspect` is a real change and must still wake, while a
+helper respawning under a new pid must not.
 
 `--wake-self` addresses this pane's current agent session through AgentSurface,
 so the same path works for Claude and Codex. The wake contains the complete

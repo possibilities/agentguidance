@@ -687,6 +687,74 @@ describe("Tend survey", () => {
     const second = { ...first, generated_at: "later" };
 
     expect(surveyFingerprint(first)).toBe(surveyFingerprint(second));
+
+    // The regression this check exists for. `last_activity_seconds` is a clock:
+    // it advances on every sweep for every worktree, so fingerprinting the whole
+    // proposal made the change check in publish() unreachable and the watcher
+    // woke its session on every sweep rather than on every change.
+    const ticked = {
+      ...first,
+      proposals: first.proposals.map((proposal) => ({
+        ...proposal,
+        last_activity_seconds: (proposal.last_activity_seconds ?? 0) + 17,
+      })),
+    };
+    expect(surveyFingerprint(ticked)).toBe(surveyFingerprint(first));
+
+    // A short-lived helper respawning under a new pid is the same picture. The
+    // pid belongs in the prose a human reads, never in what wakes them.
+    const respawned = {
+      ...first,
+      proposals: first.proposals.map((proposal) => ({
+        ...proposal,
+        reason: `${proposal.reason}, but process 99999 is working inside the worktree`,
+      })),
+    };
+    expect(surveyFingerprint(respawned)).toBe(surveyFingerprint(first));
+
+    // So is a roster row appearing or vanishing: identity, not a decision.
+    const named = {
+      ...first,
+      proposals: first.proposals.map((proposal) => ({ ...proposal, session_slug: "brave-river" })),
+    };
+    expect(surveyFingerprint(named)).toBe(surveyFingerprint(first));
+
+    // What must still wake: the worktree's content moved, ...
+    const moved = {
+      ...first,
+      proposals: first.proposals.map((proposal) => ({ ...proposal, state_digest: "0000000000000000" })),
+    };
+    expect(surveyFingerprint(moved)).not.toBe(surveyFingerprint(first));
+
+    // ... the judgement changed category under an unchanged action, ...
+    const recategorised = {
+      ...first,
+      proposals: first.proposals.map((proposal) => ({
+        ...proposal,
+        action: "inspect" as const,
+        reason_code: "detached" as const,
+      })),
+    };
+    const dirtied = {
+      ...first,
+      proposals: first.proposals.map((proposal) => ({
+        ...proposal,
+        action: "inspect" as const,
+        reason_code: "dirty" as const,
+      })),
+    };
+    expect(surveyFingerprint(recategorised)).not.toBe(surveyFingerprint(dirtied));
+
+    // ... and a backstop reduced a proposal, whatever the prose says.
+    const downgraded = {
+      ...first,
+      proposals: first.proposals.map((proposal) => ({
+        ...proposal,
+        downgrade: "process" as const,
+      })),
+    };
+    expect(surveyFingerprint(downgraded)).not.toBe(surveyFingerprint(first));
+
     expect(shouldWakeSelf(false, first)).toBe(false);
     expect(shouldWakeSelf(true, first)).toBe(true);
     expect(wakeMessage(first)).toContain(JSON.stringify(first));
@@ -694,12 +762,82 @@ describe("Tend survey", () => {
     expect(wakeMessage(first)).toContain("Do not perform any proposed action");
   });
 
+  test("codes the judgement separately from the prose that reports it", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot, "coded");
+    writeFileSync(join(worktree, "scratch.txt"), "uncommitted\n");
+    const dirty = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+    expect(dirty.proposals[0]).toMatchObject({
+      action: "inspect",
+      reason_code: "dirty",
+      downgrade: null,
+    });
+
+    // A downgrade names the backstop without erasing the judgement under it,
+    // and keeps the pid it cites out of everything change detection reads.
+    const held = fixture();
+    const heldWorktree = addWorktree(held.repository, held.worktreeRoot, "held");
+    const downgraded = surveyWorktrees({
+      projectRoots: [held.projects],
+      worktreeRoots: [held.worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: processIn(heldWorktree, 31337),
+    });
+    expect(downgraded.proposals[0]).toMatchObject({
+      action: "inspect",
+      reason_code: "contained_removable",
+      downgrade: "process",
+    });
+    expect(downgraded.proposals[0].reason).toContain("process 31337");
+    expect(downgraded.counts.downgraded_by_process).toBe(1);
+    expect(JSON.stringify(surveyFingerprint(downgraded))).not.toContain("31337");
+  });
+
+  test("restricts the walk to the surveyed roots but never a targeted path", () => {
+    const { root, projects, repository } = fixture();
+    // Registered by the repository, but outside the surveyed roots.
+    const outside = join(root, "elsewhere");
+    run(root, "mkdir", ["-p", outside]);
+    const away = join(outside, "worktree-away");
+    git(repository, "worktree", "add", "-b", "away", away, "main");
+    const awayPath = realpathSync.native(away);
+
+    const walked = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [join(root, ".herdr")],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+    expect(walked.proposals.map((proposal) => proposal.worktree)).not.toContain(awayPath);
+
+    // Targeting it explicitly still answers, because a caller gating a removal
+    // must never read "no proposal" as "nothing to worry about".
+    const targeted = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [join(root, ".herdr")],
+      worktrees: [awayPath],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+    expect(targeted.proposals.map((proposal) => proposal.worktree)).toContain(awayPath);
+  });
+
   test("considers a linked worktree that lives outside the Herdr root", () => {
     const { root, projects, repository, worktreeRoot } = fixture();
     // A worktree created somewhere else entirely — a replay directory, a
-    // Scratch volume, a fan-out under ~/worktrees. Agentsource reports these;
-    // before worktreeRoots became a restriction rather than the scope, Tend
-    // could not see them at all.
+    // fan-out under ~/worktrees. Agentsource reports these; before
+    // worktreeRoots became a restriction rather than the scope, Tend could not
+    // see them at all. This exercises the library with no restriction; the CLI
+    // applies one by default.
     const outside = join(root, "elsewhere", "app-landed");
     run(root, "mkdir", ["-p", join(root, "elsewhere")]);
     git(repository, "worktree", "add", "-b", "landed-elsewhere", outside, "main");

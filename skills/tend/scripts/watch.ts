@@ -54,6 +54,37 @@ export interface RepositoryModel {
   fork: boolean;
 }
 
+/** The judgement a proposal rests on, as a closed category rather than the
+ * prose that reports it. The prose interpolates a pid, a quiet-window count and
+ * a branch name; those move on their own and must never by themselves wake a
+ * session, so change detection reads this code and the prose stays for the
+ * human. Every branch of `buildProposal` sets exactly one. */
+export type ReasonCode =
+  | "prunable"
+  | "detached"
+  | "dirty"
+  | "held_integration"
+  | "held_mirror"
+  | "held_carry_prefix"
+  | "held_carry_ref"
+  | "held_quarantine"
+  | "contained_publication_unknown"
+  | "contained_published_carry"
+  | "contained_removable"
+  | "both_sides"
+  | "both_sides_collapse_unknown"
+  | "both_sides_collapses_publication_unknown"
+  | "both_sides_collapses_published"
+  | "both_sides_collapses_removable"
+  | "ahead_only"
+  | "indeterminate";
+
+/** Which backstop reduced a lifecycle proposal to `inspect`, or null when none
+ * did. Kept separate from `reason_code` so a downgrade never erases the
+ * judgement underneath it, and so the volatile evidence a downgrade cites — a
+ * pid, a count of seconds — stays in the prose where it cannot drive a wake. */
+export type DowngradeCause = "process" | "activity" | "ignored";
+
 export interface TendProposal {
   action: ProposalAction;
   /** Seconds since the worktree's Git metadata was last written, or null when
@@ -83,6 +114,11 @@ export interface TendProposal {
   behind: number;
   clean: boolean;
   branch_retained: boolean;
+  /** The category behind `reason`. Change detection reads this; humans read
+   * the prose. */
+  reason_code: ReasonCode;
+  /** The backstop that reduced this proposal to `inspect`, if any. */
+  downgrade: DowngradeCause | null;
   reason: string;
 }
 
@@ -137,10 +173,12 @@ interface WorktreeRecord {
 
 export interface SurveyOptions {
   projectRoots: string[];
-  /** Optional location restriction. Empty means every linked worktree a
-   * discovered repository registers, wherever it lives; a non-empty list keeps
-   * only worktrees below one of these roots. The main checkout is never a
-   * candidate either way. */
+  /** Location restriction. Empty means every linked worktree a discovered
+   * repository registers, wherever it lives; a non-empty list keeps only
+   * worktrees below one of these roots. The main checkout is never a candidate
+   * either way, and an explicitly targeted `worktrees` path ignores this
+   * restriction. The CLI defaults it to the home directory — see parseOptions;
+   * the library itself imposes no default, so a caller can survey anywhere. */
   worktreeRoots: readonly string[];
   ownership?: AgentSnapshot;
   processes?: ProcessSnapshot;
@@ -677,23 +715,35 @@ function inspectWorktree(
     behind: counts.behind,
     clean,
     branch_retained: true,
+    downgrade: null,
   };
 
   if (record.prunable) {
-    return { ...base, action: "inspect", reason: "Git marks the worktree registration prunable" };
+    return {
+      ...base,
+      action: "inspect",
+      reason_code: "prunable",
+      reason: "Git marks the worktree registration prunable",
+    };
   }
   if (record.detached || record.branch === null) {
-    return { ...base, action: "inspect", reason: "the worktree is detached" };
+    return { ...base, action: "inspect", reason_code: "detached", reason: "the worktree is detached" };
   }
   if (!clean) {
-    return { ...base, action: "inspect", reason: "the worktree has uncommitted changes" };
+    return {
+      ...base,
+      action: "inspect",
+      reason_code: "dirty",
+      reason: "the worktree has uncommitted changes",
+    };
   }
   const held = heldByModel(record.branch, model);
   if (held) {
     return {
       ...base,
       action: "inspect",
-      reason: `the worktree holds ${held}`,
+      reason_code: held.code,
+      reason: `the worktree holds ${held.prose}`,
     };
   }
 
@@ -712,6 +762,7 @@ function inspectWorktree(
       return {
         ...base,
         action: "inspect",
+        reason_code: "contained_publication_unknown",
         reason:
           `Git could not establish which branches are published, so containment in ${model.trunk} is not sufficient evidence`,
       };
@@ -720,6 +771,7 @@ function inspectWorktree(
       return {
         ...base,
         action: "inspect",
+        reason_code: "contained_published_carry",
         reason:
           `the branch is published on a remote, so containment in ${model.trunk} is not evidence the carry is finished`,
       };
@@ -727,6 +779,7 @@ function inspectWorktree(
     return {
       ...base,
       action: "remove_worktree",
+      reason_code: "contained_removable",
       reason: `the clean worktree HEAD is contained in local ${model.trunk}`,
     };
   }
@@ -742,6 +795,7 @@ function inspectWorktree(
         return {
           ...base,
           action: "catch_up_to_trunk",
+          reason_code: "both_sides_collapses_publication_unknown",
           reason:
             `${bothSides}, and the catch-up would collapse it onto ${model.trunk}, but Git could not ` +
             "establish which branches are published, so the worktree is not also proposed for removal",
@@ -751,6 +805,7 @@ function inspectWorktree(
         return {
           ...base,
           action: "catch_up_to_trunk",
+          reason_code: "both_sides_collapses_published",
           reason:
             `${bothSides}, and the catch-up would collapse it onto ${model.trunk}, but the branch is ` +
             "published on a remote, so the worktree is not also proposed for removal",
@@ -759,6 +814,7 @@ function inspectWorktree(
       return {
         ...base,
         action: "catch_up_and_remove",
+        reason_code: "both_sides_collapses_removable",
         reason:
           `${bothSides}, but every commit it carries is already upstream, so the catch-up replays ` +
           `nothing: it leaves the branch at ${model.trunk} and the worktree clean and contained`,
@@ -767,6 +823,7 @@ function inspectWorktree(
     return {
       ...base,
       action: "catch_up_to_trunk",
+      reason_code: collapses === null ? "both_sides_collapse_unknown" : "both_sides",
       reason: collapses === null
         ? `${bothSides}; Git could not establish whether the catch-up would collapse it onto ${model.trunk}`
         : bothSides,
@@ -775,6 +832,7 @@ function inspectWorktree(
   return {
     ...base,
     action: "inspect",
+    reason_code: counts.ahead > 0 ? "ahead_only" : "indeterminate",
     reason: counts.ahead > 0
       ? `the inactive branch has commits not in local ${model.trunk}`
       : "Git could not establish a conservative lifecycle action",
@@ -907,19 +965,32 @@ export function resolveModel(repository: string): RepositoryModel {
 /** Branches the declared model keeps. Their worktrees are the fork's standing
  * working set, so containment in the trunk is not evidence they are finished:
  * a published carry head is an ancestor of integration by design. */
-function heldByModel(branch: string, model: RepositoryModel): string | null {
-  if (branch === model.trunk) return `the declared integration branch ${model.trunk}`;
-  if (model.mirror && branch === model.mirror) return `the declared mirror branch ${model.mirror}`;
+function heldByModel(
+  branch: string,
+  model: RepositoryModel,
+): { code: ReasonCode; prose: string } | null {
+  if (branch === model.trunk) {
+    return { code: "held_integration", prose: `the declared integration branch ${model.trunk}` };
+  }
+  if (model.mirror && branch === model.mirror) {
+    return { code: "held_mirror", prose: `the declared mirror branch ${model.mirror}` };
+  }
   for (const prefix of model.carry_prefixes) {
     if (branch.startsWith(prefix)) {
-      return `a carried feature under the declared prefix ${prefix}`;
+      return {
+        code: "held_carry_prefix",
+        prose: `a carried feature under the declared prefix ${prefix}`,
+      };
     }
   }
   if (model.carry_refs.includes(branch)) {
-    return `the declared carry head ${branch}`;
+    return { code: "held_carry_ref", prose: `the declared carry head ${branch}` };
   }
   if (model.quarantine_prefix && branch.startsWith(model.quarantine_prefix)) {
-    return `an explicit deletion marker under ${model.quarantine_prefix}`;
+    return {
+      code: "held_quarantine",
+      prose: `an explicit deletion marker under ${model.quarantine_prefix}`,
+    };
   }
   return null;
 }
@@ -1009,7 +1080,12 @@ export function surveyWorktrees(
       // excluded only as a side effect of the Herdr-root filter, so it has to
       // be excluded on its own now that worktrees anywhere are considered.
       if (normalize(record.path) === normalize(repository)) return false;
-      if (targeted.length > 0 && !targeted.includes(normalize(record.path))) return false;
+      // An explicitly targeted path is authoritative and skips the location
+      // restriction entirely. A caller gating one known worktree asked about
+      // that path; dropping it for living outside the surveyed roots would
+      // answer "no proposal" where the contract promises an issue, and that is
+      // exactly the reading a removal must never be given.
+      if (targeted.length > 0) return targeted.includes(normalize(record.path));
       return options.worktreeRoots.length === 0 ||
         options.worktreeRoots.some((root) => pathIsWithin(record.path, root));
     });
@@ -1075,6 +1151,7 @@ export function surveyWorktrees(
         proposals.push({
           ...proposal,
           action: "inspect",
+          downgrade: "process",
           reason:
             `${proposal.reason}, but process ${holder} is working inside the worktree ` +
             "while no Herdr agent row claims it: confirm that process is finished " +
@@ -1099,6 +1176,7 @@ export function surveyWorktrees(
         proposals.push({
           ...proposal,
           action: "inspect",
+          downgrade: "activity",
           reason:
             `${proposal.reason}, but the worktree was written ${quiet}s ago, inside the ` +
             `${activityWindow}s quiet window: something may be working here that neither the ` +
@@ -1124,6 +1202,7 @@ export function surveyWorktrees(
         proposals.push({
           ...proposal,
           action: "inspect",
+          downgrade: "ignored",
           reason:
             `${proposal.reason}, but removing it would destroy ignored content no branch ` +
             `retains: ${named}${more}`,
@@ -1165,10 +1244,42 @@ export function surveyWorktrees(
   };
 }
 
+/** The facts that change what a human would decide about a worktree.
+ *
+ * Everything a proposal reports that is NOT here moves on its own:
+ * `last_activity_seconds` is a clock and advances every sweep by construction,
+ * `reason` interpolates the pid of a short-lived helper and the quiet-window
+ * count, and `session_slug` follows roster rows that come and go. Fingerprinting
+ * the whole proposal made the change check in `publish` unreachable — every
+ * sweep looked new — so the watcher woke its session unconditionally. */
+function proposalSignature(proposal: TendProposal) {
+  return {
+    action: proposal.action,
+    reason_code: proposal.reason_code,
+    downgrade: proposal.downgrade,
+    repository: proposal.repository,
+    worktree: proposal.worktree,
+    branch: proposal.branch,
+    head: proposal.head,
+    trunk: proposal.trunk,
+    trunk_head: proposal.trunk_head,
+    fork_model: proposal.fork_model,
+    ahead: proposal.ahead,
+    behind: proposal.behind,
+    clean: proposal.clean,
+    branch_retained: proposal.branch_retained,
+    // HEAD plus the full porcelain status, ignored entries included: any
+    // content change a human would care about moves this.
+    state_digest: proposal.state_digest,
+    // The subset that gates a removal. The full ignored list is evidence.
+    ignored_unrecognized: proposal.ignored_unrecognized,
+  };
+}
+
 export function surveyFingerprint(survey: TendSurvey): string {
   return JSON.stringify({
     ownership_available: survey.ownership_available,
-    proposals: survey.proposals,
+    proposals: survey.proposals.map(proposalSignature),
     issues: survey.issues,
   });
 }
@@ -1358,12 +1469,18 @@ function parseOptions(argv: string[]): WatchOptions {
     strict: true,
   });
   if (parsed.values.help) {
-    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH]... [--socket PATH] [--sweep-interval SECONDS]\n+                [--activity-window SECONDS]\n+                [--worktree PATH]...\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits.\n`);
+    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH]... (default: $HOME) [--socket PATH] [--sweep-interval SECONDS]\n+                [--activity-window SECONDS]\n+                [--worktree PATH]...\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits.\n`);
     process.exit(0);
   }
   return {
     projectRoots: (parsed.values["project-root"] ?? [join(homedir(), "code"), join(homedir(), "src")]).map(normalize),
-    worktreeRoots: (parsed.values["worktree-root"] ?? []).map(normalize),
+    // Default to the home directory. Worktrees on a removable volume or under
+    // the system temp dir are transient by construction — an installer's
+    // scratch checkout is not a forgotten directory, and a volume that
+    // unmounts would make every worktree on it vanish and reappear as
+    // "changes" to watch. Passing --worktree-root replaces this outright, so
+    // surveying elsewhere stays one flag away.
+    worktreeRoots: (parsed.values["worktree-root"] ?? [homedir()]).map(normalize),
     socketPath: normalize(parsed.values.socket ?? defaultSocketPath()),
     sweepIntervalSeconds: parseSeconds(parsed.values["sweep-interval"]),
     activityWindowSeconds: parseActivityWindow(parsed.values["activity-window"]),
