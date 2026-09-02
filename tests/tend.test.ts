@@ -136,6 +136,27 @@ describe("Tend survey", () => {
     expect(survey.counts.protected_by_agent).toBe(0);
   });
 
+  test("names the lowest pid so the reason is stable across sweeps", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    // Two processes in the worktree, discovered in the order lsof happened to
+    // emit them. The reason must not depend on that order.
+    const processes: ProcessSnapshot = {
+      available: true,
+      cwds: new Map([[join(worktree, "b"), 9000], [worktree, 120]]),
+      error: null,
+    };
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      ownership: noAgents,
+      processes,
+    });
+
+    expect(survey.proposals[0].reason).toContain("process 120 is working inside the worktree");
+  });
+
   test("leaves proposals alone when no process is inside the worktree", () => {
     const { projects, repository, worktreeRoot } = fixture();
     addWorktree(repository, worktreeRoot);

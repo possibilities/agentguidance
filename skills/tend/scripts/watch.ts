@@ -21,7 +21,9 @@ export interface AgentSnapshot {
  * working process. This is the backstop: a cwd is a fact the kernel holds. */
 export interface ProcessSnapshot {
   available: boolean;
-  /** Absolute cwd -> one representative pid holding it. */
+  /** Absolute cwd -> the lowest pid holding it. Lowest rather than first
+   * seen: lsof's order is not stable, and a pid that churns between sweeps
+   * would rewrite a proposal's reason and wake the watcher over nothing. */
   cwds: Map<string, number>;
   error: string | null;
 }
@@ -370,21 +372,25 @@ export function queryProcessCwds(lsofBin = process.env.LSOF_BIN_PATH ?? "lsof"):
       pid = Number.parseInt(line.slice(1), 10) || 0;
     } else if (line.startsWith("n") && pid !== 0) {
       const path = line.slice(1);
-      if (path.startsWith("/") && !cwds.has(path)) cwds.set(path, pid);
+      if (!path.startsWith("/")) continue;
+      const seen = cwds.get(path);
+      if (seen === undefined || pid < seen) cwds.set(path, pid);
     }
   }
   return { available: true, cwds, error: null };
 }
 
-/** The pid of a process working in this worktree, or null. */
+/** The lowest pid of any process working in this worktree, or null. Lowest so
+ * that the answer is stable across sweeps while the same processes are there. */
 export function processInWorktree(
   worktree: string,
   processes: ProcessSnapshot,
 ): number | null {
+  let holder: number | null = null;
   for (const [path, pid] of processes.cwds) {
-    if (pathIsWithin(path, worktree)) return pid;
+    if (pathIsWithin(path, worktree) && (holder === null || pid < holder)) holder = pid;
   }
-  return null;
+  return holder;
 }
 
 function conversationSlug(agent: JsonObject): string | null {
