@@ -55,6 +55,10 @@ export interface RepositoryModel {
 
 export interface TendProposal {
   action: ProposalAction;
+  /** Seconds since the worktree's Git metadata was last written, or null when
+   * it could not be read. Evidence, always reported: a small number is the
+   * cheapest sign that something is working here. */
+  last_activity_seconds: number | null;
   session_slug: string | null;
   repository: string;
   worktree: string;
@@ -91,6 +95,11 @@ export interface TendSurvey {
      * inside the worktree though no agent row claimed it. Not a protection
      * count: the worktree still appears, it just stops being actionable. */
     downgraded_by_process: number;
+    /** Lifecycle proposals reduced to `inspect` because the worktree was
+     * mutated too recently to be called inactive. An agent can work through a
+     * shell or an editor that holds no descriptor and registers no agent row,
+     * and the only trace it leaves between sweeps is a fresh mtime. */
+    downgraded_by_recent_activity: number;
     proposals: number;
   };
   proposals: TendProposal[];
@@ -122,6 +131,9 @@ export interface SurveyOptions {
   processes?: ProcessSnapshot;
   sessionSlugs?: Readonly<Record<string, string>>;
   herdrBin?: string;
+  /** Seconds of quiet a worktree must show before a lifecycle proposal on it
+   * is actionable. 0 disables the check. */
+  activityWindowSeconds?: number;
 }
 
 interface WatchOptions extends SurveyOptions {
@@ -130,6 +142,11 @@ interface WatchOptions extends SurveyOptions {
   once: boolean;
   wakeSelf: boolean;
 }
+
+/** How long a worktree must sit untouched before a lifecycle proposal on it is
+ * actionable. Long enough to cover an agent thinking between commands, short
+ * enough that genuinely abandoned worktrees still clear it. */
+const DEFAULT_ACTIVITY_WINDOW_SECONDS = 900;
 
 const EVENT_SUBSCRIPTIONS = [
   { type: "pane.created" },
@@ -564,6 +581,7 @@ function inspectWorktree(
   const clean = status.code === 0 && status.stdout.trim() === "";
   const counts = aheadBehind(record.path, model.trunk) ?? { ahead: 0, behind: 0 };
   const base = {
+    last_activity_seconds: worktreeLastActivitySeconds(record.path),
     session_slug: sessionSlug,
     repository,
     worktree: record.path,
@@ -704,6 +722,49 @@ function catchUpCollapsesToTrunk(worktree: string, trunk: string): boolean | nul
   return Number.isNaN(count) ? null : count === 0;
 }
 
+/** Seconds since anything last wrote the worktree's Git metadata, or null when
+ * it cannot be read. The index, HEAD and the reflog are what move when a
+ * checkout, commit, stage, stash or rebase happens in the worktree, so the
+ * newest of the three is a cheap floor on "when was something last done here".
+ *
+ * This is the third liveness witness, after the agent roster and the cwd
+ * sweep, and it exists because the first two share a blind spot: an agent
+ * driving a worktree through a shell, an editor or a subprocess registers no
+ * agent row and may hold no descriptor there between commands, yet is very
+ * much working. Its edits still land on the filesystem. A worktree touched
+ * seconds ago is not inactive whatever the roster says.
+ *
+ * It cannot tell whose write it was — tend's own catch-up rebase moves these
+ * same timestamps — so it never claims to identify an owner. It only refuses
+ * to call a worktree quiet when the filesystem says it is not. */
+function worktreeLastActivitySeconds(worktree: string): number | null {
+  const dir = git(worktree, ["rev-parse", "--absolute-git-dir"]);
+  if (dir.code !== 0) return null;
+  const gitDir = chomp(dir.stdout);
+  let newest = 0;
+  for (const name of ["index", "HEAD", join("logs", "HEAD")]) {
+    try {
+      newest = Math.max(newest, statSync(join(gitDir, name)).mtimeMs);
+    } catch {
+      // A worktree that never committed has no reflog; absence is not activity.
+    }
+  }
+  if (newest === 0) return null;
+  return Math.max(0, Math.round((Date.now() - newest) / 1000));
+}
+
+/** Seconds for --activity-window. 0 disables the quiet-window check, which is
+ * a deliberate act: it says the caller has established by other means that
+ * nothing is working in these worktrees. */
+function parseActivityWindow(value: string | undefined): number {
+  if (value === undefined) return DEFAULT_ACTIVITY_WINDOW_SECONDS;
+  const seconds = Number.parseInt(value, 10);
+  if (Number.isNaN(seconds) || seconds < 0) {
+    throw new Error(`--activity-window expects a non-negative number of seconds, got ${value}`);
+  }
+  return seconds;
+}
+
 function trunkHead(repository: string, trunk: string): string | null {
   const result = git(repository, ["rev-parse", "--verify", `refs/heads/${trunk}`]);
   return result.code === 0 ? result.stdout.trim() : null;
@@ -794,6 +855,8 @@ export function surveyWorktrees(
   let herdrWorktrees = 0;
   let protectedByAgent = 0;
   let downgradedByProcess = 0;
+  let downgradedByRecentActivity = 0;
+  const activityWindow = options.activityWindowSeconds ?? DEFAULT_ACTIVITY_WINDOW_SECONDS;
 
   if (!ownership.available) {
     issues.push({
@@ -891,6 +954,30 @@ export function surveyWorktrees(
         });
         continue;
       }
+      // Third witness. The roster can omit an agent and the cwd sweep can miss
+      // one that works through a shell or an editor, but an agent that changed
+      // anything left an mtime behind. A worktree written to this recently is
+      // not inactive, so its lifecycle proposal is evidence rather than an
+      // instruction — the same reduction the process check makes, for the same
+      // reason. Note this cannot attribute the write: tend's own catch-up
+      // moves these timestamps too, so a removal pass straight after one waits
+      // out the window or sets it to 0 deliberately.
+      const quiet = proposal.last_activity_seconds;
+      if (
+        activityWindow > 0 && proposal.action !== "inspect" &&
+        quiet !== null && quiet < activityWindow
+      ) {
+        downgradedByRecentActivity += 1;
+        proposals.push({
+          ...proposal,
+          action: "inspect",
+          reason:
+            `${proposal.reason}, but the worktree was written ${quiet}s ago, inside the ` +
+            `${activityWindow}s quiet window: something may be working here that neither the ` +
+            "Herdr roster nor an open descriptor reveals",
+        });
+        continue;
+      }
       proposals.push(proposal);
     }
   }
@@ -917,6 +1004,7 @@ export function surveyWorktrees(
       herdr_worktrees: herdrWorktrees,
       protected_by_agent: protectedByAgent,
       downgraded_by_process: downgradedByProcess,
+      downgraded_by_recent_activity: downgradedByRecentActivity,
       proposals: proposals.length,
     },
     proposals,
@@ -1108,6 +1196,7 @@ function parseOptions(argv: string[]): WatchOptions {
       "worktree-root": { type: "string", multiple: true },
       socket: { type: "string" },
       "sweep-interval": { type: "string" },
+      "activity-window": { type: "string" },
       once: { type: "boolean", default: false },
       "wake-self": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
@@ -1115,7 +1204,7 @@ function parseOptions(argv: string[]): WatchOptions {
     strict: true,
   });
   if (parsed.values.help) {
-    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH]... [--socket PATH] [--sweep-interval SECONDS]\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits.\n`);
+    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH]... [--socket PATH] [--sweep-interval SECONDS]\n+                [--activity-window SECONDS]\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits.\n`);
     process.exit(0);
   }
   return {
@@ -1123,6 +1212,7 @@ function parseOptions(argv: string[]): WatchOptions {
     worktreeRoots: (parsed.values["worktree-root"] ?? []).map(normalize),
     socketPath: normalize(parsed.values.socket ?? defaultSocketPath()),
     sweepIntervalSeconds: parseSeconds(parsed.values["sweep-interval"]),
+    activityWindowSeconds: parseActivityWindow(parsed.values["activity-window"]),
     once: parsed.values.once ?? false,
     wakeSelf: parsed.values["wake-self"] ?? false,
   };

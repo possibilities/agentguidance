@@ -42,6 +42,23 @@ is one a removal would take out from under a working process. So a worktree no
 agent row claims is also checked against the machine: one `lsof -d cwd` sweep,
 matched against every worktree considered.
 
+There is a third witness, because the first two share a blind spot: an agent
+driving a worktree through a shell, an editor or a subprocess registers no
+agent row and may hold no descriptor there between commands, yet is plainly
+working. What it cannot avoid leaving is an mtime. So every proposal carries
+`last_activity_seconds` — how long ago something last wrote the worktree's
+index, HEAD or reflog — and a lifecycle proposal on a worktree written inside
+the quiet window (`--activity-window`, 900s by default) is reduced to
+`inspect`, counted in `counts.downgraded_by_recent_activity`. Treat a non-zero
+count as the roster under-reporting, not as noise: two live agents on this
+machine have been observed mutating worktrees no roster row explained.
+
+Recency cannot say *whose* write it was, and tend's own catch-up rebase moves
+those same timestamps. So a removal pass straight after a catch-up will find
+its own work in the window and hold off; either wait it out, or pass
+`--activity-window 0`, which is a deliberate assertion that the caller has
+established by other means that nothing is working there.
+
 A process found there does **not** protect the worktree, because a live agent
 the roster missed and a helper some harness leaked and never reaped are
 indistinguishable from outside — pid, parent, and age all fail to separate
@@ -81,11 +98,28 @@ its evidence otherwise says.
   keep, and the worktree HEAD is already contained in the local trunk. The
   branch is explicitly retained. This includes a worktree where no commit was
   ever made.
+- `catch_up_and_remove` — the same shape as `catch_up_to_trunk`, but every
+  commit the branch carries is already upstream, so the rebase replays nothing
+  and ends with the branch sitting on trunk. That is precisely the state
+  `remove_worktree` is for, so the two are proposed together rather than making
+  the human run a catch-up and wait for the next survey to be told the obvious
+  consequence. The branch is retained, as in any removal.
 - `catch_up_to_trunk` — clean and inactive, with commits on both sides of the
-  local trunk. The proposed operation is a rebase in that worktree, never an
-  update to the trunk.
+  local trunk, and at least one of them not yet upstream. The proposed
+  operation is a rebase in that worktree, never an update to the trunk.
 - `inspect` — inactive but dirty, detached, ahead-only, holding a branch the
-  declared model keeps, or otherwise too ambiguous for either proposal above.
+  declared model keeps, or otherwise too ambiguous for any proposal above.
+
+Whether a catch-up collapses is read from Git's own already-upstream filter,
+never from a trial rebase: the helper touches no worktree. A branch whose work
+reached trunk by another route — squashed, or reworked until the patch no
+longer matches — reads as not collapsing and keeps the plain
+`catch_up_to_trunk` proposal. The error therefore falls towards proposing less,
+which is the only acceptable direction: `catch_up_and_remove` must never
+describe a rebase as a formality when it would really stop on a conflict.
+Because the combined proposal ends in a removal, it clears the same
+publication backstop `remove_worktree` clears — a published branch keeps its
+worktree, and is offered the catch-up alone.
 
 Each proposal carries the `trunk` it was judged against and `fork_model`,
 which says whether that trunk came from a declared fork model or from the
@@ -144,6 +178,10 @@ therefore blind, load the `notify` skill and post one grouped notification
 - Remove `<session-slug>` (`<repository>`, worktree `<worktree>`); `<branch>` at
   `<short-head>` is clean and contained in local `<trunk>` at `<short-trunk>`.
   The branch will be retained.
+- Catch up and remove `<session-slug>` (`<repository>`, worktree `<worktree>`);
+  rebasing `<branch>` onto local `<trunk>` replays nothing, because all
+  `<ahead>` of its commits are already upstream, so it lands on `<trunk>` and
+  the worktree is then removable. The branch will be retained.
 - Catch up `<session-slug>` (`<repository>`, worktree `<worktree>`) by rebasing
   `<branch>` onto local `<trunk>`; it is `<ahead>` ahead and `<behind>` behind,
   clean, and has no live Herdr agent.

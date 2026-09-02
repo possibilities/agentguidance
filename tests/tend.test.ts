@@ -98,6 +98,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
       sessionSlugs: { [worktree]: "finish-tend-worktree-cleanup" },
@@ -116,6 +117,109 @@ describe("Tend survey", () => {
     expect(git(repository, "worktree", "list", "--porcelain")).toBe(worktreesBefore);
   });
 
+  test("proposes catch-up AND removal when every commit the branch carries is already upstream", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    writeFileSync(join(worktree, "topic.txt"), "topic\n");
+    git(worktree, "add", "topic.txt");
+    git(worktree, "commit", "-m", "topic");
+    const landed = git(worktree, "rev-parse", "HEAD").trim();
+
+    // Move main first so the cherry-pick cannot reproduce the same commit id,
+    // then land the branch's work on main: the branch is now genuinely ahead
+    // by ancestry while carrying nothing main does not already have.
+    writeFileSync(join(repository, "main.txt"), "main\n");
+    git(repository, "add", "main.txt");
+    git(repository, "commit", "-m", "main moved");
+    git(repository, "cherry-pick", landed);
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+
+    expect(survey.proposals[0]).toMatchObject({
+      action: "catch_up_and_remove",
+      worktree,
+      ahead: 1,
+      clean: true,
+      branch_retained: true,
+    });
+    expect(survey.proposals[0]?.reason).toContain("already upstream");
+  });
+
+  test("a collapsing branch that is published keeps its worktree and is offered the catch-up alone", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    // A fork model whose trunk is still main: the publication backstop is
+    // gated on fork_model, and this keeps the branch shape of the test simple.
+    git(repository, "config", "supervisor.trunk", "main");
+    const worktree = addWorktree(repository, worktreeRoot);
+    writeFileSync(join(worktree, "topic.txt"), "topic\n");
+    git(worktree, "add", "topic.txt");
+    git(worktree, "commit", "-m", "topic");
+    const landed = git(worktree, "rev-parse", "HEAD").trim();
+    writeFileSync(join(repository, "main.txt"), "main\n");
+    git(repository, "add", "main.txt");
+    git(repository, "commit", "-m", "main moved");
+    git(repository, "cherry-pick", landed);
+    // Somebody's carry, whatever it is named: the removal half must not fire.
+    git(repository, "update-ref", "refs/remotes/origin/topic", landed);
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+
+    expect(survey.proposals[0]?.action).toBe("catch_up_to_trunk");
+    expect(survey.proposals[0]?.reason).toContain("published on a remote");
+  });
+
+  test("reduces a lifecycle proposal to inspect when the worktree was written inside the quiet window", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+
+    // The fixture was just built, so its Git metadata is seconds old — exactly
+    // the shape of an agent working through a shell that holds no descriptor.
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 900,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+
+    expect(survey.counts.downgraded_by_recent_activity).toBe(1);
+    expect(survey.proposals[0]?.action).toBe("inspect");
+    expect(survey.proposals[0]?.reason).toContain("quiet window");
+    expect(survey.proposals[0]?.last_activity_seconds).not.toBeNull();
+    // The worktree still appears; it just stops being actionable.
+    expect(survey.proposals).toHaveLength(1);
+  });
+
+  test("a zero quiet window disables the activity check entirely", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    addWorktree(repository, worktreeRoot);
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+
+    expect(survey.counts.downgraded_by_recent_activity).toBe(0);
+    expect(survey.proposals[0]?.action).toBe("remove_worktree");
+    // Evidence is still reported even when it gates nothing.
+    expect(survey.proposals[0]?.last_activity_seconds).not.toBeNull();
+  });
+
   test("reduces a removal to inspect when a process works in a worktree no agent row claims", () => {
     const { projects, repository, worktreeRoot } = fixture();
     const worktree = addWorktree(repository, worktreeRoot);
@@ -123,6 +227,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: processIn(join(worktree, "src"), 9182),
     });
@@ -151,6 +256,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes,
     });
@@ -186,6 +292,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: processIn("/somewhere/else"),
     });
@@ -206,6 +313,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership,
       processes: processIn(worktree),
     });
@@ -222,6 +330,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: { available: false, cwds: new Map(), error: "lsof absent" },
     });
@@ -242,6 +351,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
       sessionSlugs: remembered,
@@ -261,7 +371,7 @@ describe("Tend survey", () => {
     git(repository, "add", "main.txt");
     git(repository, "commit", "-m", "main moved");
 
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
+    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], activityWindowSeconds: 0, ownership: noAgents, processes: noProcesses });
 
     expect(survey.proposals[0]).toMatchObject({
       action: "catch_up_to_trunk",
@@ -281,7 +391,7 @@ describe("Tend survey", () => {
         agents: [{ pane_id: "w1:p1", agent_status: status, cwd: worktree }],
         error: null,
       };
-      const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership });
+      const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], activityWindowSeconds: 0, ownership });
       expect(survey.proposals, status).toHaveLength(0);
       expect(survey.counts.protected_by_agent, status).toBe(1);
     }
@@ -296,6 +406,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: { available: false, agents: [], error: "socket absent" },
       processes: noProcesses,
     });
@@ -316,7 +427,7 @@ describe("Tend survey", () => {
     git(worktree, "commit", "-m", "landed");
     git(repository, "branch", "-f", "integration", git(worktree, "rev-parse", "HEAD"));
 
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
+    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], activityWindowSeconds: 0, ownership: noAgents, processes: noProcesses });
 
     expect(survey.issues).toHaveLength(0);
     expect(survey.proposals[0]).toMatchObject({
@@ -338,7 +449,7 @@ describe("Tend survey", () => {
       declareFork(repository);
       const worktree = addWorktree(repository, worktreeRoot, branch);
 
-      const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
+      const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], activityWindowSeconds: 0, ownership: noAgents, processes: noProcesses });
 
       expect(survey.proposals, branch).toHaveLength(1);
       expect(survey.proposals[0], branch).toMatchObject({ action: "inspect", fork_model: true });
@@ -351,7 +462,7 @@ describe("Tend survey", () => {
     addWorktree(repository, worktreeRoot);
     declareFork(repository);
 
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
+    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], activityWindowSeconds: 0, ownership: noAgents, processes: noProcesses });
 
     expect(survey.proposals).toHaveLength(0);
     expect(survey.issues[0]?.reason).toContain("declares integration as its trunk");
@@ -364,7 +475,7 @@ describe("Tend survey", () => {
     declareFork(repository);
     git(repository, "config", "supervisor.workshop", join(projects, "absent-workshop"));
 
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
+    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], activityWindowSeconds: 0, ownership: noAgents, processes: noProcesses });
 
     expect(survey.issues[0]?.reason).toContain("declared workshop");
     expect(survey.issues[0]?.reason).toContain("is missing");
@@ -384,7 +495,7 @@ describe("Tend survey", () => {
     const worktree = addWorktree(repository, worktreeRoot, "topic");
 
     expect(resolveModel(repository).carry_prefixes).toEqual([]);
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
+    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], activityWindowSeconds: 0, ownership: noAgents, processes: noProcesses });
     expect(survey.proposals[0]).toMatchObject({ action: "remove_worktree", worktree });
   });
 
@@ -417,7 +528,7 @@ describe("Tend survey", () => {
   test("fingerprints ignore timestamps and wake records carry the complete survey", () => {
     const { projects, repository, worktreeRoot } = fixture();
     addWorktree(repository, worktreeRoot);
-    const first = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
+    const first = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], activityWindowSeconds: 0, ownership: noAgents, processes: noProcesses });
     const second = { ...first, generated_at: "later" };
 
     expect(surveyFingerprint(first)).toBe(surveyFingerprint(second));
@@ -461,6 +572,7 @@ describe("Tend survey", () => {
     const restricted = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
     });
@@ -506,6 +618,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
     });
@@ -543,6 +656,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
     });
@@ -566,6 +680,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
     });
@@ -717,6 +832,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
     });
@@ -739,6 +855,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
     });
@@ -758,6 +875,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
     });
@@ -805,6 +923,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
     });
@@ -904,6 +1023,7 @@ describe("Tend survey", () => {
     const survey = surveyWorktrees({
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
       ownership: noAgents,
       processes: noProcesses,
     });
