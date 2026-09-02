@@ -354,7 +354,7 @@ export function worktreeHasActiveAgent(
 
 /** Every process cwd on the machine, in one sweep. */
 export function queryProcessCwds(lsofBin = process.env.LSOF_BIN_PATH ?? "lsof"): ProcessSnapshot {
-  const result = run(lsofBin, ["-w", "-d", "cwd", "-F", "pn"]);
+  const result = run(lsofBin, ["-w", "-d", "cwd", "-F", "pcn"]);
   // lsof exits non-zero when any process could not be examined, which is
   // routine and not a failure: the records it did produce are still facts.
   // Only a run that produced nothing at all is unavailable.
@@ -367,12 +367,22 @@ export function queryProcessCwds(lsofBin = process.env.LSOF_BIN_PATH ?? "lsof"):
   }
   const cwds = new Map<string, number>();
   let pid = 0;
+  let command = "";
   for (const line of result.stdout.split("\n")) {
     if (line.startsWith("p")) {
       pid = Number.parseInt(line.slice(1), 10) || 0;
+      command = "";
+    } else if (line.startsWith("c")) {
+      command = line.slice(1);
     } else if (line.startsWith("n") && pid !== 0) {
       const path = line.slice(1);
       if (!path.startsWith("/")) continue;
+      // `git -C <worktree>` chdirs, so every git this survey runs holds a
+      // worktree cwd for as long as it lives — and a concurrent survey's sweep
+      // sees them. Tend would report its own instrument as an occupant, in a
+      // different worktree each time. Git is never the agent we are looking
+      // for, so it is never evidence.
+      if (command === "git") continue;
       const seen = cwds.get(path);
       if (seen === undefined || pid < seen) cwds.set(path, pid);
     }

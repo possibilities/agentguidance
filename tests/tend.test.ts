@@ -12,6 +12,7 @@ import {
   surveyWorktrees,
   shouldWakeSelf,
   wakeMessage,
+  queryProcessCwds,
   worktreeHasActiveAgent,
   type AgentSnapshot,
   type ProcessSnapshot,
@@ -155,6 +156,27 @@ describe("Tend survey", () => {
     });
 
     expect(survey.proposals[0].reason).toContain("process 120 is working inside the worktree");
+  });
+
+  test("ignores git processes, which are the survey's own instrument", () => {
+    // `git -C <worktree>` chdirs, so a concurrent survey's gits appear to
+    // occupy worktrees. A stub lsof stands in for the real sweep.
+    const root = mkdtempSync(join(tmpdir(), "tend-lsof-"));
+    temporary.push(root);
+    const stub = join(root, "lsof");
+    writeFileSync(stub, [
+      "#!/bin/sh",
+      "printf 'p101\\ncgit\\nfcwd\\nn/repo/worktree\\n'",
+      "printf 'p202\\ncnode\\nfcwd\\nn/repo/other\\n'",
+      "",
+    ].join("\n"));
+    run(root, "chmod", ["+x", stub]);
+
+    const snapshot = queryProcessCwds(stub);
+
+    expect(snapshot.available).toBe(true);
+    expect(snapshot.cwds.get("/repo/worktree")).toBeUndefined();
+    expect(snapshot.cwds.get("/repo/other")).toBe(202);
   });
 
   test("leaves proposals alone when no process is inside the worktree", () => {
