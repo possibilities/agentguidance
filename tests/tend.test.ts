@@ -14,10 +14,17 @@ import {
   wakeMessage,
   worktreeHasActiveAgent,
   type AgentSnapshot,
+  type ProcessSnapshot,
 } from "../skills/tend/scripts/watch.ts";
 
 const temporary: string[] = [];
 const noAgents: AgentSnapshot = { available: true, agents: [], error: null };
+const noProcesses: ProcessSnapshot = { available: true, cwds: new Map(), error: null };
+
+/** One process sitting in `path`, as the lsof sweep would report it. */
+function processIn(path: string, pid = 4242): ProcessSnapshot {
+  return { available: true, cwds: new Map([[path, pid]]), error: null };
+}
 
 afterEach(() => {
   for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true });
@@ -91,6 +98,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
       sessionSlugs: { [worktree]: "finish-tend-worktree-cleanup" },
     });
 
@@ -107,6 +115,78 @@ describe("Tend survey", () => {
     expect(git(repository, "worktree", "list", "--porcelain")).toBe(worktreesBefore);
   });
 
+  test("reduces a removal to inspect when a process works in a worktree no agent row claims", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      ownership: noAgents,
+      processes: processIn(join(worktree, "src"), 9182),
+    });
+
+    // The worktree is still reported — suppressing it would make a worktree
+    // holding a leaked helper permanently unremovable — but nothing about it
+    // is actionable until a human confirms the process is finished.
+    expect(survey.proposals).toHaveLength(1);
+    expect(survey.proposals[0].action).toBe("inspect");
+    expect(survey.proposals[0].reason).toContain("process 9182 is working inside the worktree");
+    expect(survey.counts.downgraded_by_process).toBe(1);
+    expect(survey.counts.protected_by_agent).toBe(0);
+  });
+
+  test("leaves proposals alone when no process is inside the worktree", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    addWorktree(repository, worktreeRoot);
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      ownership: noAgents,
+      processes: processIn("/somewhere/else"),
+    });
+
+    expect(survey.proposals[0].action).toBe("remove_worktree");
+    expect(survey.counts.downgraded_by_process).toBe(0);
+  });
+
+  test("an agent row still protects outright, without a downgrade", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    const ownership: AgentSnapshot = {
+      available: true,
+      agents: [{ cwd: worktree }],
+      error: null,
+    };
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      ownership,
+      processes: processIn(worktree),
+    });
+
+    expect(survey.proposals).toHaveLength(0);
+    expect(survey.counts.protected_by_agent).toBe(1);
+    expect(survey.counts.downgraded_by_process).toBe(0);
+  });
+
+  test("reports an unavailable process sweep as an issue", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    addWorktree(repository, worktreeRoot);
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      ownership: noAgents,
+      processes: { available: false, cwds: new Map(), error: "lsof absent" },
+    });
+
+    expect(survey.issues.some((issue) => issue.reason.includes("process backstop is unavailable")))
+      .toBe(true);
+  });
+
   test("retains Herdr's conversation slug after its agent row disappears", () => {
     const { projects, repository, worktreeRoot } = fixture();
     const worktree = addWorktree(repository, worktreeRoot);
@@ -120,6 +200,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
       sessionSlugs: remembered,
     });
 
@@ -137,7 +218,7 @@ describe("Tend survey", () => {
     git(repository, "add", "main.txt");
     git(repository, "commit", "-m", "main moved");
 
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents });
+    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
 
     expect(survey.proposals[0]).toMatchObject({
       action: "catch_up_to_trunk",
@@ -173,6 +254,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: { available: false, agents: [], error: "socket absent" },
+      processes: noProcesses,
     });
 
     expect(survey.ownership_available).toBe(false);
@@ -191,7 +273,7 @@ describe("Tend survey", () => {
     git(worktree, "commit", "-m", "landed");
     git(repository, "branch", "-f", "integration", git(worktree, "rev-parse", "HEAD"));
 
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents });
+    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
 
     expect(survey.issues).toHaveLength(0);
     expect(survey.proposals[0]).toMatchObject({
@@ -213,7 +295,7 @@ describe("Tend survey", () => {
       declareFork(repository);
       const worktree = addWorktree(repository, worktreeRoot, branch);
 
-      const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents });
+      const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
 
       expect(survey.proposals, branch).toHaveLength(1);
       expect(survey.proposals[0], branch).toMatchObject({ action: "inspect", fork_model: true });
@@ -226,7 +308,7 @@ describe("Tend survey", () => {
     addWorktree(repository, worktreeRoot);
     declareFork(repository);
 
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents });
+    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
 
     expect(survey.proposals).toHaveLength(0);
     expect(survey.issues[0]?.reason).toContain("declares integration as its trunk");
@@ -239,7 +321,7 @@ describe("Tend survey", () => {
     declareFork(repository);
     git(repository, "config", "supervisor.workshop", join(projects, "absent-workshop"));
 
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents });
+    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
 
     expect(survey.issues[0]?.reason).toContain("declared workshop");
     expect(survey.issues[0]?.reason).toContain("is missing");
@@ -259,7 +341,7 @@ describe("Tend survey", () => {
     const worktree = addWorktree(repository, worktreeRoot, "topic");
 
     expect(resolveModel(repository).carry_prefixes).toEqual([]);
-    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents });
+    const survey = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
     expect(survey.proposals[0]).toMatchObject({ action: "remove_worktree", worktree });
   });
 
@@ -271,6 +353,7 @@ describe("Tend survey", () => {
       projectRoots: [dirty.projects],
       worktreeRoots: [dirty.worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
     expect(dirtySurvey.proposals[0]).toMatchObject({ action: "inspect", clean: false });
 
@@ -283,6 +366,7 @@ describe("Tend survey", () => {
       projectRoots: [ahead.projects],
       worktreeRoots: [ahead.worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
     expect(aheadSurvey.proposals[0]).toMatchObject({ action: "inspect", ahead: 1, behind: 0 });
   });
@@ -290,7 +374,7 @@ describe("Tend survey", () => {
   test("fingerprints ignore timestamps and wake records carry the complete survey", () => {
     const { projects, repository, worktreeRoot } = fixture();
     addWorktree(repository, worktreeRoot);
-    const first = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents });
+    const first = surveyWorktrees({ projectRoots: [projects], worktreeRoots: [worktreeRoot], ownership: noAgents, processes: noProcesses });
     const second = { ...first, generated_at: "later" };
 
     expect(surveyFingerprint(first)).toBe(surveyFingerprint(second));
@@ -322,6 +406,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [],
       ownership: noAgents,
+      processes: noProcesses,
     });
     expect(unrestricted.proposals.map((proposal) => proposal.worktree)).toContain(
       realpathSync.native(outside),
@@ -334,6 +419,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
     expect(restricted.proposals).toHaveLength(0);
   });
@@ -347,6 +433,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [],
       ownership: noAgents,
+      processes: noProcesses,
     });
 
     expect(survey.counts.linked_worktrees).toBe(0);
@@ -377,6 +464,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
 
     expect(survey.proposals).toHaveLength(3);
@@ -413,6 +501,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
 
     expect(survey.proposals).toHaveLength(1);
@@ -435,6 +524,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
 
     expect(survey.proposals[0]).toMatchObject({ action: "remove_worktree", worktree });
@@ -585,6 +675,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
     expect(survey.proposals[0]).toMatchObject({ action: "inspect", worktree });
   });
@@ -606,6 +697,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
     expect(survey.proposals[0]).toMatchObject({ action: "inspect", worktree });
   });
@@ -624,6 +716,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
     expect(survey.proposals[0]).toMatchObject({ action: "remove_worktree", worktree });
   });
@@ -670,6 +763,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
 
     const held = survey.proposals.find((proposal) => proposal.branch === "driver-sync");
@@ -768,6 +862,7 @@ describe("Tend survey", () => {
       projectRoots: [projects],
       worktreeRoots: [worktreeRoot],
       ownership: noAgents,
+      processes: noProcesses,
     });
 
     expect(survey.proposals[0]).toMatchObject({ action: "remove_worktree", worktree });

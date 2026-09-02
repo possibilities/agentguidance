@@ -35,6 +35,23 @@ Every agent row whose `cwd` or `foreground_cwd` is the worktree or lies inside
 it protects that worktree. Status does not weaken the protection: `idle`,
 `done`, `blocked`, `working`, and `unknown` all mean an agent is still there.
 
+The roster is not the only witness, because it has been observed to omit an
+agent that was demonstrably alive while still reporting
+`ownership_available: true` — a worktree read as unowned on that evidence alone
+is one a removal would take out from under a working process. So a worktree no
+agent row claims is also checked against the machine: one `lsof -d cwd` sweep,
+matched against every worktree considered.
+
+A process found there does **not** protect the worktree, because a live agent
+the roster missed and a helper some harness leaked and never reaped are
+indistinguishable from outside — pid, parent, and age all fail to separate
+them, and suppressing on the weaker reading would make exactly the worktrees
+that most need cleaning permanently unremovable. Instead the proposal is
+reduced to `inspect` and names the pid, so no proposed operation ever runs
+underneath a process without a human having looked. `counts.downgraded_by_process`
+says how often that happened; a non-zero count is worth reading as a question
+about the roster, not only about the worktrees.
+
 The helper considers every linked worktree its repositories register, wherever
 that worktree lives: below `~/.herdr/worktrees`, in a fan-out under
 `~/worktrees`, on a Scratch volume, beside the checkout in `~/src`. A worktree
@@ -56,6 +73,9 @@ absent, discovery is the plain walk it always was.
 A repository's main checkout is never a candidate, whatever its ancestry says.
 
 Its proposals are deliberately conservative:
+
+Any proposal may be reduced to `inspect` by the process check above, whatever
+its evidence otherwise says.
 
 - `remove_worktree` — clean, inactive, on a branch the declared model does not
   keep, and the worktree HEAD is already contained in the local trunk. The

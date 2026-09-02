@@ -14,6 +14,18 @@ export interface AgentSnapshot {
   error: string | null;
 }
 
+/** What the machine says is running, as opposed to what Herdr's roster says.
+ * The roster has been observed to omit an agent that is demonstrably alive —
+ * reporting availability the whole time — and a worktree read as unowned on
+ * that evidence alone is one a removal proposal would take out from under a
+ * working process. This is the backstop: a cwd is a fact the kernel holds. */
+export interface ProcessSnapshot {
+  available: boolean;
+  /** Absolute cwd -> one representative pid holding it. */
+  cwds: Map<string, number>;
+  error: string | null;
+}
+
 export type ProposalAction =
   | "remove_worktree"
   | "catch_up_to_trunk"
@@ -72,6 +84,10 @@ export interface TendSurvey {
     linked_worktrees: number;
     herdr_worktrees: number;
     protected_by_agent: number;
+    /** Lifecycle proposals reduced to `inspect` because a process is working
+     * inside the worktree though no agent row claimed it. Not a protection
+     * count: the worktree still appears, it just stops being actionable. */
+    downgraded_by_process: number;
     proposals: number;
   };
   proposals: TendProposal[];
@@ -100,6 +116,7 @@ export interface SurveyOptions {
    * candidate either way. */
   worktreeRoots: readonly string[];
   ownership?: AgentSnapshot;
+  processes?: ProcessSnapshot;
   sessionSlugs?: Readonly<Record<string, string>>;
   herdrBin?: string;
 }
@@ -331,6 +348,43 @@ export function worktreeHasActiveAgent(
   agents: readonly JsonObject[],
 ): boolean {
   return agents.some((agent) => agentPaths(agent).some((path) => pathIsWithin(path, worktree)));
+}
+
+/** Every process cwd on the machine, in one sweep. */
+export function queryProcessCwds(lsofBin = process.env.LSOF_BIN_PATH ?? "lsof"): ProcessSnapshot {
+  const result = run(lsofBin, ["-w", "-d", "cwd", "-F", "pn"]);
+  // lsof exits non-zero when any process could not be examined, which is
+  // routine and not a failure: the records it did produce are still facts.
+  // Only a run that produced nothing at all is unavailable.
+  if (result.stdout.trim() === "") {
+    return {
+      available: false,
+      cwds: new Map(),
+      error: result.stderr.trim() || `${lsofBin} produced no cwd records`,
+    };
+  }
+  const cwds = new Map<string, number>();
+  let pid = 0;
+  for (const line of result.stdout.split("\n")) {
+    if (line.startsWith("p")) {
+      pid = Number.parseInt(line.slice(1), 10) || 0;
+    } else if (line.startsWith("n") && pid !== 0) {
+      const path = line.slice(1);
+      if (path.startsWith("/") && !cwds.has(path)) cwds.set(path, pid);
+    }
+  }
+  return { available: true, cwds, error: null };
+}
+
+/** The pid of a process working in this worktree, or null. */
+export function processInWorktree(
+  worktree: string,
+  processes: ProcessSnapshot,
+): number | null {
+  for (const [path, pid] of processes.cwds) {
+    if (pathIsWithin(path, worktree)) return pid;
+  }
+  return null;
 }
 
 function conversationSlug(agent: JsonObject): string | null {
@@ -657,17 +711,28 @@ export function surveyWorktrees(
   const discovered = findRepositories(options.projectRoots);
   const repositories = discovered.repositories;
   const ownership = options.ownership ?? queryAgents(options.herdrBin);
+  const processes = options.processes ?? queryProcessCwds();
   const proposals: TendProposal[] = [];
   const issues: TendIssue[] = [...discovered.issues];
   let linkedWorktrees = 0;
   let herdrWorktrees = 0;
   let protectedByAgent = 0;
+  let downgradedByProcess = 0;
 
   if (!ownership.available) {
     issues.push({
       repository: null,
       worktree: null,
       reason: `Herdr ownership unavailable: ${ownership.error ?? "unknown error"}`,
+    });
+  }
+  if (!processes.available) {
+    issues.push({
+      repository: null,
+      worktree: null,
+      reason:
+        `the process backstop is unavailable (${processes.error ?? "unknown error"}), ` +
+        "so a worktree held by an agent the roster omits cannot be detected",
     });
   }
 
@@ -722,14 +787,35 @@ export function surveyWorktrees(
         protectedByAgent += 1;
         continue;
       }
-      proposals.push(inspectWorktree(
+      const proposal = inspectWorktree(
         repository,
         record,
         target,
         model,
         slugForWorktree(options.sessionSlugs ?? {}, record.path),
         published,
-      ));
+      );
+      // No agent row claims it, so the ordinary judgement above ran. Ask the
+      // machine before letting that judgement be actionable: a cwd inside the
+      // worktree may be a live agent the roster omitted, or a helper some
+      // harness leaked and never reaped. Those are indistinguishable from
+      // here — pid, parent and age all fail to separate them — so this never
+      // decides which. It only refuses to propose an operation that would run
+      // underneath one, and says what it saw.
+      const holder = processInWorktree(record.path, processes);
+      if (holder !== null && proposal.action !== "inspect") {
+        downgradedByProcess += 1;
+        proposals.push({
+          ...proposal,
+          action: "inspect",
+          reason:
+            `${proposal.reason}, but process ${holder} is working inside the worktree ` +
+            "while no Herdr agent row claims it: confirm that process is finished " +
+            "before any lifecycle work here",
+        });
+        continue;
+      }
+      proposals.push(proposal);
     }
   }
 
@@ -754,6 +840,7 @@ export function surveyWorktrees(
       linked_worktrees: linkedWorktrees,
       herdr_worktrees: herdrWorktrees,
       protected_by_agent: protectedByAgent,
+      downgraded_by_process: downgradedByProcess,
       proposals: proposals.length,
     },
     proposals,
