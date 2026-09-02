@@ -1742,7 +1742,7 @@ describe("Durable park", () => {
 
     // The judgement is untouched; only the bookkeeping is added.
     expect(survey.proposals[0]).toMatchObject({ action: "remove_worktree", worktree });
-    expect(survey.proposals[0]?.parked?.reason).toBe("deliberate");
+    expect(survey.proposals[0]?.parked[0]?.reason).toBe("deliberate");
     expect(survey.counts.parked).toBe(1);
     expect(survey.parked_unmatched).toEqual([]);
     // A machine whose every remaining proposal is parked stops asking.
@@ -1829,18 +1829,173 @@ describe("Durable park", () => {
     // While the worktree is gone the ref is the only copy of that edit, so
     // forgetting the record must not take the work with it.
     git(repository, "worktree", "remove", "--force", worktree);
-    const early = unparkWorktree(worktree, file);
+    const [early] = unparkWorktree(worktree, file);
     expect(early?.snapshot_kept).toBe(true);
     expect(git(repository, "rev-parse", "--verify", record.snapshot_ref!)).toBeTruthy();
     expect(loadParked(file)).toEqual([]);
-    expect(unparkWorktree(worktree, file)).toBeNull();
+    expect(unparkWorktree(worktree, file)).toEqual([]);
 
     // Once it is back, the ref has done its job.
     spawnSync("sh", ["-c", recreateCommand(record)], { encoding: "utf8" });
     const again = parkWorktree({ worktree, summary: "Mid-edit.", reason: "later", file });
-    const done = unparkWorktree(worktree, file);
+    const [done] = unparkWorktree(worktree, file);
     expect(done?.snapshot_kept).toBe(false);
     expect(spawnSync("git", ["-C", repository, "rev-parse", "--verify", again.snapshot_ref!]).status)
       .not.toBe(0);
+  });
+});
+
+describe("Parking what is no longer there", () => {
+  function parkedFile(): string {
+    const directory = mkdtempSync(join(tmpdir(), "tend-parked-"));
+    temporary.push(directory);
+    return join(directory, "Parked.md");
+  }
+
+  test("parks a worktree that is already gone, from the branch that outlived it", () => {
+    const { repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot, "reaped");
+    writeFileSync(join(worktree, "work.txt"), "committed before it went\n");
+    git(worktree, "add", "work.txt");
+    git(worktree, "commit", "-m", "work");
+    const head = git(worktree, "rev-parse", "HEAD");
+    git(repository, "worktree", "remove", worktree);
+    const file = parkedFile();
+
+    // Reconstructed after the fact: the directory is gone, so the caller
+    // supplies what Git can no longer be asked in place.
+    const record = parkWorktree({
+      worktree,
+      summary: "A session whose worktree was reaped before anyone wrote it down.",
+      reason: "recovered from the transcript archive",
+      file,
+      repository,
+      branch: "reaped",
+      identity: { slug: "the-reaped-session", harness: "codex", session: "01a0-abcd" },
+    });
+
+    expect(record).toMatchObject({
+      name: "the-reaped-session",
+      worktree,
+      repository,
+      branch: "reaped",
+      head,
+      harness: "codex",
+      session: "01a0-abcd",
+      // Nothing to snapshot: the uncommitted work went with the directory.
+      snapshot_ref: null,
+    });
+    expect(record.unpark).toContain(`worktree add ${worktree} reaped`);
+    expect(record.unpark).toContain("agentlaunch x-resume 01a0-abcd");
+    expect(loadParked(file)).toEqual([record]);
+
+    // And the recorded recipe actually rebuilds it.
+    const replay = spawnSync("sh", ["-c", /`([^`]*)`/.exec(record.unpark)![1]], { encoding: "utf8" });
+    expect(replay.status).toBe(0);
+    expect(readFileSync(join(worktree, "work.txt"), "utf8")).toBe("committed before it went\n");
+  });
+
+  test("refuses to invent the facts an absent worktree can no longer supply", () => {
+    const { repository, worktreeRoot } = fixture();
+    const gone = join(worktreeRoot, "app", "worktree-never-existed");
+
+    expect(() => parkWorktree({ worktree: gone, summary: "s", reason: "r", file: parkedFile() }))
+      .toThrow(/pass the repository/);
+    expect(() => parkWorktree({ worktree: gone, summary: "s", reason: "r", file: parkedFile(), repository }))
+      .toThrow(/pass the branch/);
+    // A branch that does not resolve is refused rather than recorded: a record
+    // naming a branch nobody has rebuilds nothing.
+    expect(() => parkWorktree({
+      worktree: gone, summary: "s", reason: "r", file: parkedFile(), repository, branch: "no-such-branch",
+    })).toThrow(/has no branch no-such-branch/);
+  });
+
+  test("parks a session that ran in the main checkout without inventing a worktree", () => {
+    const { repository } = fixture();
+    // Whatever is dirty in a shared checkout today belongs to whoever is in it
+    // now, not to the session being parked.
+    writeFileSync(join(repository, "someone-elses.txt"), "not the parked session's work\n");
+    const file = parkedFile();
+
+    const record = parkWorktree({
+      worktree: repository,
+      summary: "A session that worked directly in the checkout.",
+      reason: "recorded so it can be resumed",
+      file,
+      identity: { slug: "worked-in-the-checkout", harness: "claude", session: "abcd-1234" },
+    });
+
+    expect(record.worktree).toBe(repository);
+    expect(record.repository).toBe(repository);
+    expect(record.snapshot_ref).toBeNull();
+    // No worktree add: the directory is the repository and never went anywhere.
+    expect(record.unpark).not.toContain("worktree add");
+    expect(record.unpark).toBe("resume `agentlaunch x-resume abcd-1234`");
+    expect(git(repository, "status", "--porcelain=v1")).toContain("someone-elses.txt");
+  });
+
+  test("a record with nothing to rebuild and nobody to resume still says where to look", () => {
+    const { repository } = fixture();
+    const record = parkWorktree({
+      worktree: repository,
+      summary: "No session id was ever recovered for this one.",
+      reason: "keeping the note anyway",
+      file: parkedFile(),
+    });
+
+    expect(record.unpark).toBe(`open \`${repository}\``);
+  });
+});
+
+describe("Two sessions, one checkout", () => {
+  function parkedFile(): string {
+    const directory = mkdtempSync(join(tmpdir(), "tend-parked-"));
+    temporary.push(directory);
+    return join(directory, "Parked.md");
+  }
+
+  test("keeps a record per session rather than letting the second evict the first", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    const file = parkedFile();
+
+    parkWorktree({
+      worktree, summary: "The first session.", reason: "one", file,
+      identity: { slug: "first-session", harness: "claude", session: "sess-1" },
+    });
+    parkWorktree({
+      worktree, summary: "The second session, same checkout.", reason: "two", file,
+      identity: { slug: "second-session", harness: "codex", session: "sess-2" },
+    });
+
+    const records = loadParked(file);
+    expect(records.map((r) => r.session)).toEqual(["sess-1", "sess-2"]);
+
+    // Re-parking one of them updates that record in place, and leaves the other.
+    parkWorktree({
+      worktree, summary: "The first session, revised.", reason: "one again", file,
+      identity: { slug: "first-session", harness: "claude", session: "sess-1" },
+    });
+    const revised = loadParked(file);
+    expect(revised).toHaveLength(2);
+    expect(revised.find((r) => r.session === "sess-1")?.reason).toBe("one again");
+
+    // The proposal carries both, and unparking one leaves the other standing.
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+      parked: loadParked(file),
+    });
+    expect(survey.proposals[0]?.parked).toHaveLength(2);
+    expect(survey.counts.parked).toBe(1);
+
+    expect(unparkWorktree(worktree, file, "sess-1")).toHaveLength(1);
+    expect(loadParked(file).map((r) => r.session)).toEqual(["sess-2"]);
+    // And without a session id, everything recorded for the path goes.
+    expect(unparkWorktree(worktree, file)).toHaveLength(1);
+    expect(loadParked(file)).toEqual([]);
   });
 });

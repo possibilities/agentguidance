@@ -357,9 +357,37 @@ park is still ordinary lifecycle work under every gate in the next section:
 the park establishes that removal would lose nothing, never that it is
 permitted.
 
+**Two shapes of park take extra facts, because the worktree cannot supply
+them.** A worktree that is already gone is still worth parking whenever its
+branch outlived it, which is the usual case since tend retains branches:
+`--repository PATH --branch NAME` names what Git can no longer be asked in
+place. Neither is inferred from the directory's name — a guessed branch that
+happens to resolve rebuilds the wrong work convincingly. And a session
+reconstructed from the transcript archive carries an identity nothing on the
+machine remembers: `--name SLUG --harness NAME --session ID` supply it, and
+override the store when it holds something staler.
+
+Neither of those is snapshotted, and one more is not either: a session that
+ran in a repository's own checkout. There is nothing left to capture in an
+absent worktree, and whatever is dirty in a shared checkout today belongs to
+whoever is working in it now — recording that as a departed session's
+leavings would be a false record in the one document that has to be
+trustworthy. A main-checkout park also records no recreate step, because the
+directory is the repository and never went anywhere.
+
+**Recreate before resuming, always.** `agentlaunch x-resume` returns a session
+to its recorded cwd only while that directory exists; when it does not, it
+falls back to the current working directory without saying so, and the agent
+comes back in whatever repository the command happened to be run from. That
+has been observed, not theorised. The recorded recipe is in the right order
+for this reason — follow it in that order.
+
 **Every survey reads the document back.** A proposal whose worktree is parked
-carries the record in `parked`, counted in `counts.parked`. A record matching
-no proposal appears in `parked_unmatched` with one of three statuses, and each
+carries the records in `parked`, counted in `counts.parked`. It is a list
+because a park is one agent *and* its worktree: several sessions may have
+worked in the same checkout, and each is separately worth resuming, so a second
+park there adds an entry rather than evicting the first. A record matching no
+proposal appears in `parked_unmatched` with one of three statuses, and each
 asks the human something different:
 
 - `absent` — the worktree is gone. This is parking having worked, and the
@@ -369,10 +397,11 @@ asks the human something different:
 - `settled` — the worktree is present and this survey proposes nothing for it.
 
 Unparking is the recorded command chain, run as ordinary work, followed by
-`bun scripts/watch.ts --unpark PATH` to drop the entry. Run them in that order:
-`--unpark` deletes the snapshot ref once the worktree is back, and deliberately
-keeps it when the worktree is still absent, because then the ref is the only
-copy of that uncommitted work. It says so when it keeps one.
+`bun scripts/watch.ts --unpark PATH` to drop the entry — add `--session ID`
+where several sessions share that path and only one is coming back. Run them in
+that order: `--unpark` deletes the snapshot ref once the worktree is back, and
+deliberately keeps it when the worktree is still absent, because then the ref
+is the only copy of that uncommitted work. It says so when it keeps one.
 
 ## Before acting on a proposal
 

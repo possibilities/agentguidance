@@ -147,11 +147,15 @@ export interface ParkUnmatched {
 
 export interface TendProposal {
   action: ProposalAction;
-  /** The parked record covering this worktree, or null. A parked proposal is
-   * still a proposal — the judgement does not change because a human wrote it
-   * down — but it has already been decided, so the wizard reports it rather
-   * than asking again. */
-  parked: ParkRecord | null;
+  /** The parked records covering this worktree, newest last, empty when none
+   * do. A parked proposal is still a proposal — the judgement does not change
+   * because a human wrote it down — but it has already been decided, so the
+   * wizard reports it rather than asking again.
+   *
+   * A list rather than one record because a park is one agent *and* its
+   * worktree: several sessions may have worked in the same checkout, and each
+   * is separately worth resuming. */
+  parked: ParkRecord[];
   /** Seconds since the worktree's Git metadata was last written, or null when
    * it could not be read. Evidence, always reported: a small number is the
    * cheapest sign that something is working here. */
@@ -281,6 +285,11 @@ interface WatchOptions extends SurveyOptions {
   unpark?: string;
   summary?: string;
   reason?: string;
+  parkRepository?: string;
+  parkBranch?: string;
+  parkSession?: string;
+  parkHarness?: string;
+  parkName?: string;
 }
 
 /** How long a worktree must sit untouched before a lifecycle proposal on it is
@@ -838,7 +847,7 @@ function inspectWorktree(
     downgrade: null,
     // Filled in once, after every downgrade has been applied: a park is
     // bookkeeping over the finished judgement, never an input to it.
-    parked: null,
+    parked: [] as ParkRecord[],
   };
 
   if (record.prunable) {
@@ -1369,12 +1378,16 @@ export function surveyWorktrees(
   // never changes what tend thinks should happen to a worktree — it records
   // that a human already answered that question, so the wizard stops asking.
   const parked = options.parked ?? [];
-  const byWorktree = new Map(parked.map((record) => [normalize(record.worktree), record]));
+  const byWorktree = new Map<string, ParkRecord[]>();
+  for (const record of parked) {
+    const key = normalize(record.worktree);
+    byWorktree.set(key, [...(byWorktree.get(key) ?? []), record]);
+  }
   let parkedProposals = 0;
   for (const proposal of proposals) {
-    const record = byWorktree.get(proposal.worktree);
-    if (!record) continue;
-    proposal.parked = record;
+    const records = byWorktree.get(proposal.worktree);
+    if (!records) continue;
+    proposal.parked = records;
     parkedProposals += 1;
   }
   // A parked record with no proposal is the interesting case, and there are
@@ -1497,7 +1510,7 @@ export function surveyFingerprint(survey: TendSurvey): string {
  * proposal is parked therefore goes quiet — which is the property that makes
  * parking worth doing rather than just skipping an item each run. */
 export function shouldWakeSelf(enabled: boolean, survey: TendSurvey): boolean {
-  const unparked = survey.proposals.some((proposal) => proposal.parked === null);
+  const unparked = survey.proposals.some((proposal) => proposal.parked.length === 0);
   return enabled && (unparked || !survey.ownership_available);
 }
 
@@ -1643,17 +1656,25 @@ function backticked(value: string | undefined): string[] {
  * deleted stay deleted, and the reset that follows returns them to being
  * uncommitted changes rather than a staged commit waiting to happen. */
 export function unparkCommand(record: ParkRecord): string {
-  const create = record.branch
-    ? `git -C ${record.repository} worktree add ${record.worktree} ${record.branch}`
-    : `git -C ${record.repository} worktree add --detach ${record.worktree} ${record.head}`;
-  const restore = record.snapshot_ref
-    ? ` && git -C ${record.worktree} read-tree -u --reset ${record.snapshot_ref}` +
-      ` && git -C ${record.worktree} reset -q`
-    : "";
-  const steps = [`recreate ${quoted(`${create}${restore}`)}`];
+  const steps: string[] = [];
+  // A session that ran in the repository's own checkout has no worktree to
+  // rebuild — the directory is the repository and it never went anywhere.
+  // Emitting `worktree add` for it would be a command that fails at best and
+  // creates a second checkout of the branch at worst.
+  if (record.worktree !== record.repository) {
+    const create = record.branch
+      ? `git -C ${record.repository} worktree add ${record.worktree} ${record.branch}`
+      : `git -C ${record.repository} worktree add --detach ${record.worktree} ${record.head}`;
+    const restore = record.snapshot_ref
+      ? ` && git -C ${record.worktree} read-tree -u --reset ${record.snapshot_ref}` +
+        ` && git -C ${record.worktree} reset -q`
+      : "";
+    steps.push(`recreate ${quoted(`${create}${restore}`)}`);
+  }
   if (record.session) {
     steps.push(`resume ${quoted(`agentlaunch x-resume ${record.session}`)}`);
   }
+  if (steps.length === 0) steps.push(`open ${quoted(record.worktree)}`);
   return steps.join(", then ");
 }
 
@@ -1842,6 +1863,19 @@ export interface ParkRequest {
   agents?: readonly JsonObject[];
   sessions?: Readonly<Record<string, SessionIdentity>>;
   now?: Date;
+  /** The repository still holding the branch of a worktree that is already
+   * gone. Required to park one, because nothing else can say where it came
+   * from once the directory Git would have been asked is missing. */
+  repository?: string;
+  /** The branch to rebuild an absent worktree from. Required with it, and
+   * never guessed from the directory's name: a wrong branch produces a record
+   * that rebuilds the wrong work and looks correct doing it. */
+  branch?: string;
+  /** Identity for a session neither the live roster nor the store remembers —
+   * reconstructed from the transcript archive by a human or an agent that went
+   * looking. Overrides both, because a caller who has the session id has
+   * better evidence than an empty store. */
+  identity?: Partial<SessionIdentity>;
 }
 
 /** Write one park record, replacing any earlier record for the same worktree.
@@ -1852,27 +1886,71 @@ export interface ParkRequest {
  * establishes is that removal would no longer lose anything. */
 export function parkWorktree(request: ParkRequest): ParkRecord {
   const worktree = normalize(request.worktree);
-  const top = git(worktree, ["rev-parse", "--show-toplevel"]);
-  if (top.code !== 0) throw new Error(`${worktree} is not inside a Git repository`);
-  if (normalize(chomp(top.stdout)) !== worktree) {
-    throw new Error(`${worktree} is inside a worktree rather than being one`);
+  const present = existsSync(worktree);
+  let repository: string;
+  let branch: string | null;
+  let head: string;
+  if (present) {
+    const top = git(worktree, ["rev-parse", "--show-toplevel"]);
+    if (top.code !== 0) throw new Error(`${worktree} is not inside a Git repository`);
+    if (normalize(chomp(top.stdout)) !== worktree) {
+      throw new Error(`${worktree} is inside a worktree rather than being one`);
+    }
+    const commonDir = resolveCommonDir(worktree);
+    if (!commonDir) throw new Error(`could not resolve the Git common directory for ${worktree}`);
+    repository = mainWorktreeFor(commonDir, worktree);
+    const resolved = git(worktree, ["rev-parse", "HEAD"]);
+    if (resolved.code !== 0) throw new Error(`${worktree} has no HEAD commit to park`);
+    head = chomp(resolved.stdout);
+    const branchRef = git(worktree, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    branch = branchRef.code === 0 ? chomp(branchRef.stdout) : null;
+  } else {
+    // A worktree that is already gone can still be parked, and often should
+    // be: the branch outlived it, so everything needed to rebuild it exists —
+    // just not in the directory Git would normally be asked. Both facts must
+    // be supplied rather than inferred from the path, because a name-derived
+    // branch that happens to resolve rebuilds the wrong work convincingly.
+    if (!request.repository) {
+      throw new Error(
+        `${worktree} does not exist; pass the repository that still holds its branch`,
+      );
+    }
+    repository = normalize(request.repository);
+    if (!isCheckoutRoot(repository)) {
+      throw new Error(`${repository} is not a Git checkout root`);
+    }
+    if (!request.branch) {
+      throw new Error(`${worktree} is gone; pass the branch it should be rebuilt from`);
+    }
+    branch = request.branch;
+    const resolved = git(repository, ["rev-parse", "--verify", `refs/heads/${branch}`]);
+    if (resolved.code !== 0) {
+      throw new Error(`${repository} has no branch ${branch} to rebuild ${worktree} from`);
+    }
+    head = chomp(resolved.stdout);
   }
-  const commonDir = resolveCommonDir(worktree);
-  if (!commonDir) throw new Error(`could not resolve the Git common directory for ${worktree}`);
-  const repository = mainWorktreeFor(commonDir, worktree);
-  const head = git(worktree, ["rev-parse", "HEAD"]);
-  if (head.code !== 0) throw new Error(`${worktree} has no HEAD commit to park`);
-  const branchRef = git(worktree, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  const branch = branchRef.code === 0 ? chomp(branchRef.stdout) : null;
   const live = (request.agents ?? []).find((agent) =>
     agentPaths(agent).some((path) => pathIsWithin(path, worktree))
   );
-  const identity = live
+  const remembered = live
     ? identityOf(live)
     : identityForWorktree(request.sessions ?? {}, worktree);
-  const name = identity?.slug ?? worktree.split("/").pop() ?? worktree;
+  const identity: SessionIdentity = {
+    slug: request.identity?.slug ?? remembered?.slug ?? null,
+    harness: request.identity?.harness ?? remembered?.harness ?? null,
+    session: request.identity?.session ?? remembered?.session ?? null,
+  };
+  const name = identity.slug ?? worktree.split("/").pop() ?? worktree;
   const agentCwd = live && typeof live["cwd"] === "string" ? normalize(live["cwd"]) : null;
-  const snapshot = captureSnapshot(worktree, chomp(head.stdout), name);
+  // Two cases must not be snapshotted, for the same reason: the uncommitted
+  // work found there would not be the parked session's. An absent worktree has
+  // none left to find, and a repository's main checkout is shared — whatever is
+  // dirty in it today belongs to whoever is working in it now, and recording
+  // that as this session's leavings would be a false record in the one document
+  // that is supposed to be trustworthy.
+  const snapshot = present && worktree !== repository
+    ? captureSnapshot(worktree, head, name)
+    : null;
   const record: ParkRecord = {
     name,
     summary: request.summary,
@@ -1881,9 +1959,9 @@ export function parkWorktree(request: ParkRequest): ParkRecord {
     worktree,
     repository,
     branch,
-    head: chomp(head.stdout),
-    harness: identity?.harness ?? null,
-    session: identity?.session ?? null,
+    head,
+    harness: identity.harness,
+    session: identity.session,
     cwd: agentCwd && agentCwd !== worktree ? agentCwd : null,
     snapshot_ref: snapshot?.ref ?? null,
     snapshot_paths: snapshot?.paths ?? 0,
@@ -1891,7 +1969,12 @@ export function parkWorktree(request: ParkRequest): ParkRecord {
   };
   record.unpark = unparkCommand(record);
   const file = request.file ?? parkedFilePath();
-  const kept = loadParked(file).filter((existing) => existing.worktree !== worktree);
+  // Replace the record for this worktree *and this session*, so re-parking
+  // updates in place while a second session that worked in the same checkout
+  // gets its own entry rather than quietly evicting the first.
+  const kept = loadParked(file).filter((existing) =>
+    existing.worktree !== worktree || existing.session !== record.session
+  );
   saveParked([...kept, record], file);
   return record;
 }
@@ -1904,24 +1987,34 @@ export interface UnparkResult {
   snapshot_kept: boolean;
 }
 
+/** Drop the records for one worktree, or one session's record within it.
+ *
+ * Without `session` this unparks everything recorded for that path, because
+ * the ordinary case is one park per worktree and asking for a session id there
+ * would be ceremony. Pass one where several sessions share a checkout. */
 export function unparkWorktree(
   worktree: string,
   file: string = parkedFilePath(),
-): UnparkResult | null {
+  session?: string,
+): UnparkResult[] {
   const target = normalize(worktree);
   const records = loadParked(file);
-  const record = records.find((existing) => existing.worktree === target);
-  if (!record) return null;
-  saveParked(records.filter((existing) => existing !== record), file);
-  let kept = false;
-  if (record.snapshot_ref) {
-    // The ref goes only once the worktree is back, because a worktree that is
-    // still absent means the snapshot was never laid down and this ref is the
-    // only place that work exists.
-    if (existsSync(target)) git(record.repository, ["update-ref", "-d", record.snapshot_ref]);
-    else kept = true;
-  }
-  return { record, snapshot_kept: kept };
+  const dropped = records.filter((existing) =>
+    existing.worktree === target && (session === undefined || existing.session === session)
+  );
+  if (dropped.length === 0) return [];
+  saveParked(records.filter((existing) => !dropped.includes(existing)), file);
+  return dropped.map((record) => {
+    let kept = false;
+    if (record.snapshot_ref) {
+      // The ref goes only once the worktree is back, because a worktree that is
+      // still absent means the snapshot was never laid down and this ref is the
+      // only place that work exists.
+      if (existsSync(target)) git(record.repository, ["update-ref", "-d", record.snapshot_ref]);
+      else kept = true;
+    }
+    return { record, snapshot_kept: kept };
+  });
 }
 
 /** How many of this watcher's survey files to leave in place. A wake the agent
@@ -2178,6 +2271,11 @@ function parseOptions(argv: string[]): WatchOptions {
       unpark: { type: "string" },
       summary: { type: "string" },
       reason: { type: "string" },
+      repository: { type: "string" },
+      branch: { type: "string" },
+      session: { type: "string" },
+      harness: { type: "string" },
+      name: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
     strict: true,
@@ -2190,6 +2288,9 @@ function parseOptions(argv: string[]): WatchOptions {
         "                [--sweep-interval SECONDS] [--activity-window SECONDS]",
         "                [--worktree PATH]... [--assert-action ACTION]",
         "       watch.ts --park PATH --summary TEXT --reason TEXT",
+        "                [--repository PATH --branch NAME]  (a worktree already gone)",
+        "                [--name SLUG --harness NAME --session ID]  (a session neither",
+        "                the roster nor the store remembers)",
         "       watch.ts --unpark PATH",
         "                [--parked-file PATH] (default: ~/obsidian/work/Parked.md)",
         "",
@@ -2228,6 +2329,11 @@ function parseOptions(argv: string[]): WatchOptions {
     unpark: parsed.values.unpark ? normalize(parsed.values.unpark) : undefined,
     summary: parsed.values.summary,
     reason: parsed.values.reason,
+    parkRepository: parsed.values.repository,
+    parkBranch: parsed.values.branch,
+    parkSession: parsed.values.session,
+    parkHarness: parsed.values.harness,
+    parkName: parsed.values.name,
   };
 }
 
@@ -2255,6 +2361,13 @@ if (import.meta.main) {
         file: options.parkedFile,
         agents: ownership.agents,
         sessions: loadSessionIdentities(),
+        repository: options.parkRepository,
+        branch: options.parkBranch,
+        identity: {
+          slug: options.parkName,
+          harness: options.parkHarness,
+          session: options.parkSession,
+        },
       });
       process.stdout.write(`${JSON.stringify({ type: "tend_park", record })}\n`);
       process.exit(0);
@@ -2267,18 +2380,19 @@ if (import.meta.main) {
   }
 
   if (options.unpark) {
-    const result = unparkWorktree(options.unpark, options.parkedFile);
-    if (!result) {
+    const results = unparkWorktree(options.unpark, options.parkedFile, options.parkSession);
+    if (results.length === 0) {
       process.stderr.write(`tend: nothing parked at ${options.unpark}\n`);
       process.exit(1);
     }
-    if (result.snapshot_kept) {
+    for (const result of results) {
+      if (!result.snapshot_kept) continue;
       process.stderr.write(
         `tend: kept ${result.record.snapshot_ref} — ${result.record.worktree} does not exist, ` +
           "so that ref is still the only copy of the uncommitted work\n",
       );
     }
-    process.stdout.write(`${JSON.stringify({ type: "tend_unpark", ...result })}\n`);
+    process.stdout.write(`${JSON.stringify({ type: "tend_unpark", unparked: results })}\n`);
     process.exit(0);
   }
 
