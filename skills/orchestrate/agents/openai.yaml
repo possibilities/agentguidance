@@ -1,4 +1,0 @@
-interface:
-  display_name: "Orchestrate"
-  short_description: "Conduct the session as a control plane over workers"
-  default_prompt: "Use $orchestrate for this conversation."

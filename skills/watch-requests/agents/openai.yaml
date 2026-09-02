@@ -1,4 +1,0 @@
-interface:
-  display_name: "Watch Requests"
-  short_description: "Watch our upstream PRs and keep them moving"
-  default_prompt: "Use $watch-requests to survey our open upstream pull requests and, on approval, run the standing watch that keeps them moving."

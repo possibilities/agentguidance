@@ -28,7 +28,7 @@ tests/branch-policy.sh
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in build collab email maintain notify orchestrate prompt resource-create resource-update story tend watch-requests; do
+for skill in build collab email maintain notify tend; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
@@ -48,20 +48,13 @@ explicit_model_skills=$(
     done | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'
 )
 [ "$explicit_model_skills" = \
-    "build maintain orchestrate resource-create resource-update tend watch-requests" ] \
+    "build maintain tend" ] \
     || fail "explicit-only skill policy drifted: $explicit_model_skills"
 
 [ -x skills/tend/scripts/watch.ts ] \
     || fail "the tend watcher is not executable"
 command -v bun >/dev/null 2>&1 || fail "bun is required to test tend"
 bun test tests/tend.test.ts
-# The resource skills document their schema as living beside them; the
-# update side carries it as a symlink so there is exactly one source.
-for manifest_skill in resource-create resource-update; do
-    [ -f "skills/$manifest_skill/MANIFEST.md" ] \
-        || fail "resource schema does not resolve: skills/$manifest_skill/MANIFEST.md"
-done
-
 [ -x scripts/render ] || fail "the renderer is not executable"
 [ -x scripts/post-sync ] || fail "the post-sync hook is not executable"
 grep -F '/render' scripts/post-sync >/dev/null \
@@ -116,8 +109,6 @@ grep -F 'validate-extension-splice' "$rendered" >/dev/null \
 [ ! -w "$rendered" ] || fail "the rendered skill is not read-only"
 [ -f "$rendered_skills/collab/agents/openai.yaml" ] \
     || fail "the render did not ship the skill's sibling files"
-[ -f "$rendered_skills/resource-update/MANIFEST.md" ] \
-    || fail "the rendered resource-update manifest symlink does not resolve"
 [ ! -e "$rendered_skills/retired-validate" ] \
     || fail "the render did not prune a retired skill it once produced"
 
@@ -146,7 +137,7 @@ fi
 # Operator publication guidance must survive the shared render into every
 # skill that consumes GUIDELINES.md; those skills are projected to Codex and
 # Claude from the same common pack.
-for guided_skill in build collab maintain orchestrate; do
+for guided_skill in build collab maintain; do
     rendered_guided_skill="$rendered_skills/$guided_skill/SKILL.md"
     grep -F 'gh gist create FILE --desc "…" --web' "$rendered_guided_skill" >/dev/null \
         || fail "the rendered $guided_skill skill omits Gist create-and-open guidance"
@@ -165,26 +156,5 @@ for worker in collab build; do
     grep -F 'git apply -R --check' "$rendered_worker" >/dev/null \
         || fail "the rendered $worker skill omits the read-only reverse probe"
 done
-
-# The orchestrator-only tools section renders into the orchestrator
-# rendition and nowhere else: that advertisement scoping is the design, so
-# its presence there and absence from a worker skill are asserted.
-rendered_orchestrate="$rendered_skills/orchestrate/SKILL.md"
-grep -F 'help me steer that agent' "$rendered_orchestrate" >/dev/null \
-    || fail "the rendered orchestrate skill is missing the orchestrator tools splice"
-if grep -F 'help me steer that agent' "$rendered" >/dev/null; then
-    fail "the orchestrator tools section leaked into a worker skill"
-fi
-
-# The surface doctrine is orchestrator conduct: the two-lane rule rides the
-# shared fragment into the rendition, which binds herdr as the surface by
-# name, and none of it reaches a worker skill.
-grep -F 'placed on the surface' "$rendered_orchestrate" >/dev/null \
-    || fail "the rendered orchestrate skill is missing the surface doctrine"
-grep -F 'The surface is herdr' "$rendered_orchestrate" >/dev/null \
-    || fail "the rendered orchestrate skill does not bind herdr as the surface"
-if grep -F 'placed on the surface' "$rendered" >/dev/null; then
-    fail "the surface doctrine leaked into a worker skill"
-fi
 
 printf 'ok\n'

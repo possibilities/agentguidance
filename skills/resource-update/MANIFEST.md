@@ -1,1 +1,0 @@
-../resource-create/MANIFEST.md

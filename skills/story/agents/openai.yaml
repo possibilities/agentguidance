@@ -1,4 +1,0 @@
-interface:
-  display_name: "Story"
-  short_description: "Teach a codebase subject as a narrated chapter"
-  default_prompt: "Use $story to teach a software project, subsystem, feature, or file as a chapter-sized narrative with proven coverage."

@@ -262,8 +262,8 @@ because W. Ready for another look." Everything else waits for approval.
 
 The branch is pushed to the fork when its request opens, and from then on
 it is an open-request head, preserved as `## Branch model` says. The cycle
-does not tend open offers; `watch-requests` does. When the spec's reading
-says an offer has landed, the matching carried work is retired at the next
+does not tend open offers. When the spec's reading says an offer has landed,
+the matching carried work is retired at the next
 cycle — by reading the upstream code, as `## Reconcile the fork` requires,
 never because the request closed.
 

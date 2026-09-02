@@ -14,11 +14,9 @@ because choosing its own would write a tree nobody reads.
 Two kinds of render point, spliced by `scripts/render`:
 
 - `<!-- fragment: NAME.md -->` — repo-owned shared doctrine from
-  `fragments/`, so the skills that share a spine (collab, build,
-  orchestrate, and prompt share classification, the sketch contract, build
-  norms, the domain-model discipline, the orchestrator's conduct, and the
-  orchestrator's own tools) cannot drift apart. A missing fragment fails
-  the render.
+  `fragments/`, so the skills that share a spine (collab and build share
+  classification, the sketch contract, build norms, and the domain-model
+  discipline) cannot drift apart. A missing fragment fails the render.
 - `<!-- extension-prompt: NAME.md -->` — operator-owned machine voice from
   `~/.config/agentguidance/` (linked there by AgentStart from its
   `prompts/agentguidance/`). An absent file renders to nothing.

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Prompt"
-  short_description: "Turn the human's idea into a prompt for an agent"
-  default_prompt: "Use $prompt to turn this idea into a prompt an agent can run with."

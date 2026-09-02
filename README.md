@@ -2,17 +2,15 @@
 
 [![CI](https://github.com/possibilities/agentguidance/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentguidance/actions/workflows/ci.yml)
 
-The general agent-guidance skills — `collab`, `build`, `maintain`, `tend`,
-`resource-create`, `resource-update`, `story`, and `watch-requests` — and the
-system that composes them.
+The general agent-guidance skills — `collab`, `build`, `email`, `maintain`,
+`notify`, and `tend` — and the system that composes them.
 
 Each skill is a template. The renderer splices in shared doctrine from
 `fragments/` and the operator's own voice from `~/.config/agentguidance/`, then
 writes the read-only artifacts every configured agent loads.
 
 These skills are the *general* layer of the agent\* fleet: how to read a
-request, when to sketch and wait, how to build well, how research becomes a
-durable resource, how a codebase becomes a story, how a carried fork is kept
+request, when to sketch and wait, how to build well, how a carried fork is kept
 current from its workshop, and how inactive agent worktrees are tended without
 changing them. Tool-specific runbooks live
 with their tools — `agentboard` ships `board`, `agentwiki` ships `wiki`. This
