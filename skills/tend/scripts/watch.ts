@@ -96,8 +96,62 @@ export type ReasonCode =
  * pid, a count of seconds — stays in the prose where it cannot drive a wake. */
 export type DowngradeCause = "process" | "activity" | "ignored";
 
+/** One parked agent and its worktree, as the parked document records it.
+ *
+ * A park is not a note about a deferred decision — it is everything needed to
+ * delete the worktree now and reconstitute the work later: the path to rebuild
+ * at, the branch and commit to rebuild from, the snapshot holding whatever was
+ * never committed, and the native session id that resumes the agent that was
+ * doing it. A record missing any of those is a worktree that can be removed but
+ * not brought back, which is the one outcome parking exists to prevent. */
+export interface ParkRecord {
+  /** The entry's heading: the session slug where one is known, else the
+   * worktree's own directory name. Human identity, never a key. */
+  name: string;
+  /** One sentence on what this agent and worktree are, written by whoever
+   * parked it. The only field tend cannot derive, and the only one that says
+   * why the record is worth keeping. */
+  summary: string;
+  reason: string;
+  parked_at: string;
+  /** The key. Absolute, and the path a recreated worktree must reoccupy:
+   * `agentlaunch x-resume` returns the session to its recorded cwd, so a
+   * worktree rebuilt anywhere else resumes the agent into a directory its
+   * conversation does not describe. */
+  worktree: string;
+  repository: string;
+  branch: string | null;
+  head: string;
+  harness: string | null;
+  session: string | null;
+  /** The agent's own cwd, recorded only when it is not the worktree root. */
+  cwd: string | null;
+  /** Ref holding the snapshot commit, or null when the worktree was clean and
+   * the branch already held every byte. */
+  snapshot_ref: string | null;
+  snapshot_paths: number;
+  /** The recorded recipe, rendered at park time and kept verbatim on reload so
+   * a human may correct it in the document. */
+  unpark: string;
+}
+
+/** Why a parked record matched no proposal in this survey. Each is a different
+ * question to the human, and none of them is "nothing happened". */
+export type ParkStatus = "absent" | "occupied" | "settled";
+
+export interface ParkUnmatched {
+  record: ParkRecord;
+  status: ParkStatus;
+  detail: string;
+}
+
 export interface TendProposal {
   action: ProposalAction;
+  /** The parked record covering this worktree, or null. A parked proposal is
+   * still a proposal — the judgement does not change because a human wrote it
+   * down — but it has already been decided, so the wizard reports it rather
+   * than asking again. */
+  parked: ParkRecord | null;
   /** Seconds since the worktree's Git metadata was last written, or null when
    * it could not be read. Evidence, always reported: a small number is the
    * cheapest sign that something is working here. */
@@ -140,7 +194,7 @@ export interface TendIssue {
 }
 
 export interface TendSurvey {
-  schema_version: 2;
+  schema_version: 3;
   type: "tend_survey";
   occasion: "snapshot" | "start" | "change";
   generated_at: string;
@@ -162,9 +216,16 @@ export interface TendSurvey {
     /** Removal proposals reduced to `inspect` because the worktree holds
      * ignored content that no branch would retain. */
     downgraded_by_ignored_content: number;
+    /** Proposals the human has already parked. Counted, not subtracted: they
+     * are still part of the picture, they just stop being questions. */
+    parked: number;
     proposals: number;
   };
   proposals: TendProposal[];
+  /** Parked records this survey could not match to a proposal. The important
+   * one is `absent`: the worktree is gone, so this record is the only thing
+   * that knows the work existed. */
+  parked_unmatched: ParkUnmatched[];
   issues: TendIssue[];
 }
 
@@ -193,7 +254,10 @@ export interface SurveyOptions {
   worktreeRoots: readonly string[];
   ownership?: AgentSnapshot;
   processes?: ProcessSnapshot;
-  sessionSlugs?: Readonly<Record<string, string>>;
+  sessions?: Readonly<Record<string, SessionIdentity>>;
+  /** The parked document's records. Supplied rather than read here so a survey
+   * stays a pure judgement over its inputs; the CLI loads the file. */
+  parked?: readonly ParkRecord[];
   herdrBin?: string;
   /** Seconds of quiet a worktree must show before a lifecycle proposal on it
    * is actionable. 0 disables the check. */
@@ -212,6 +276,11 @@ interface WatchOptions extends SurveyOptions {
   /** Refuse to exit 0 unless every proposal in this survey carries this action.
    * A gate for a caller about to act on one worktree. */
   assertAction?: string;
+  parkedFile: string;
+  park?: string;
+  unpark?: string;
+  summary?: string;
+  reason?: string;
 }
 
 /** How long a worktree must sit untouched before a lifecycle proposal on it is
@@ -248,11 +317,16 @@ export function pathIsWithin(path: string, root: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-function run(command: string, args: string[], cwd?: string): CommandResult {
+function run(
+  command: string,
+  args: string[],
+  cwd?: string,
+  env?: Readonly<Record<string, string | undefined>>,
+): CommandResult {
   const child = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
-    env: process.env,
+    env: env ? { ...process.env, ...env } : process.env,
     maxBuffer: 8 * 1024 * 1024,
   });
   return {
@@ -262,8 +336,12 @@ function run(command: string, args: string[], cwd?: string): CommandResult {
   };
 }
 
-function git(cwd: string, args: string[]): CommandResult {
-  return run("git", ["-C", cwd, ...args]);
+function git(
+  cwd: string,
+  args: string[],
+  env?: Readonly<Record<string, string | undefined>>,
+): CommandResult {
+  return run("git", ["-C", cwd, ...args], undefined, env);
 }
 
 /** Strip the newline Git terminates its output with, and nothing else.
@@ -492,6 +570,17 @@ export function processInWorktree(
   return holder;
 }
 
+/** What an agent was, reduced to the three facts that outlive it: the name a
+ * human knows it by, the harness that ran it, and the native session id that
+ * resumes it. The last of those is why this store holds more than a slug —
+ * parking exists to bring an agent back, and nothing else on the machine
+ * remembers which session was working in a worktree once its row is gone. */
+export interface SessionIdentity {
+  slug: string | null;
+  harness: string | null;
+  session: string | null;
+}
+
 function conversationSlug(agent: JsonObject): string | null {
   const tokens = asObject(agent["tokens"]);
   const value = tokens?.["conversation"];
@@ -500,44 +589,61 @@ function conversationSlug(agent: JsonObject): string | null {
     : null;
 }
 
-/** Keep the human-facing conversation identity after its live agent row
- * disappears. The long-running watcher owns this in memory; no repository or
- * worktree metadata is written.
+export function identityOf(agent: JsonObject): SessionIdentity {
+  const harness = agent["agent"];
+  return {
+    slug: conversationSlug(agent),
+    harness: typeof harness === "string" && harness !== "" ? harness : null,
+    session: sessionId(agent),
+  };
+}
+
+/** Keep an agent's identity after its live row disappears. No repository or
+ * worktree metadata is written; the store is a file in the temp directory.
  *
  * Keyed by the agent's own directory rather than by a worktree derived from a
  * path layout: a worktree is only known to be one once Git names it, and
  * worktrees live wherever they were created, not only two segments below a
- * Herdr root. `slugForWorktree` resolves the key against a real worktree. */
-export function rememberSessionSlugs(
-  remembered: Record<string, string>,
+ * Herdr root. `identityForWorktree` resolves the key against a real worktree. */
+export function rememberSessions(
+  remembered: Record<string, SessionIdentity>,
   agents: readonly JsonObject[],
 ): void {
   for (const agent of agents) {
-    const slug = conversationSlug(agent);
-    if (!slug) continue;
+    const identity = identityOf(agent);
+    // A row carrying neither name nor session teaches nothing, and writing it
+    // would overwrite something a better-formed row already established.
+    if (!identity.slug && !identity.session) continue;
     for (const path of agentPaths(agent)) {
-      remembered[normalize(path)] = slug;
+      remembered[normalize(path)] = identity;
     }
   }
 }
 
-/** The slug remembered for the deepest agent directory inside this worktree.
- * Deepest wins so a nested worktree keeps its own identity rather than
- * inheriting the enclosing one's. */
-export function slugForWorktree(
-  remembered: Readonly<Record<string, string>>,
+/** The identity remembered for the deepest agent directory inside this
+ * worktree. Deepest wins so a nested worktree keeps its own identity rather
+ * than inheriting the enclosing one's. */
+export function identityForWorktree(
+  remembered: Readonly<Record<string, SessionIdentity>>,
   worktree: string,
-): string | null {
+): SessionIdentity | null {
   let bestPath: string | null = null;
-  let bestSlug: string | null = null;
-  for (const [path, slug] of Object.entries(remembered)) {
+  let best: SessionIdentity | null = null;
+  for (const [path, identity] of Object.entries(remembered)) {
     if (!pathIsWithin(path, worktree)) continue;
     if (bestPath === null || path.length > bestPath.length) {
       bestPath = path;
-      bestSlug = slug;
+      best = identity;
     }
   }
-  return bestSlug;
+  return best;
+}
+
+export function slugForWorktree(
+  remembered: Readonly<Record<string, SessionIdentity>>,
+  worktree: string,
+): string | null {
+  return identityForWorktree(remembered, worktree)?.slug ?? null;
 }
 
 export function queryAgents(herdrBin = process.env.HERDR_BIN_PATH ?? "herdr"): AgentSnapshot {
@@ -730,6 +836,9 @@ function inspectWorktree(
     clean,
     branch_retained: true,
     downgrade: null,
+    // Filled in once, after every downgrade has been applied: a park is
+    // bookkeeping over the finished judgement, never an input to it.
+    parked: null,
   };
 
   if (record.prunable) {
@@ -1178,7 +1287,7 @@ export function surveyWorktrees(
         record,
         target,
         model,
-        slugForWorktree(options.sessionSlugs ?? {}, record.path),
+        slugForWorktree(options.sessions ?? {}, record.path),
         published,
       );
       // No agent row claims it, so the ordinary judgement above ran. Ask the
@@ -1256,6 +1365,59 @@ export function surveyWorktrees(
     }
   }
 
+  // The parked document, matched in after every judgement is final. A park
+  // never changes what tend thinks should happen to a worktree — it records
+  // that a human already answered that question, so the wizard stops asking.
+  const parked = options.parked ?? [];
+  const byWorktree = new Map(parked.map((record) => [normalize(record.worktree), record]));
+  let parkedProposals = 0;
+  for (const proposal of proposals) {
+    const record = byWorktree.get(proposal.worktree);
+    if (!record) continue;
+    proposal.parked = record;
+    parkedProposals += 1;
+  }
+  // A parked record with no proposal is the interesting case, and there are
+  // three of them. The worktree may be gone — which is parking working as
+  // intended, and leaves this record as the only thing that knows the work
+  // existed. An agent may be back in it, which means somebody unparked it by
+  // hand and the record is now stale. Or it may simply be sitting there with
+  // nothing to propose. Each is reported; none is silently dropped, because a
+  // record that stops being mentioned is a worktree nobody will ever rebuild.
+  const proposed = new Set(proposals.map((proposal) => proposal.worktree));
+  const parkedUnmatched: ParkUnmatched[] = [];
+  for (const record of parked) {
+    const worktree = normalize(record.worktree);
+    if (proposed.has(worktree)) continue;
+    // A targeted survey judged the paths it was asked about and nothing else,
+    // so every other record is unexamined rather than unmatched.
+    if (targeted.length > 0 && !targeted.includes(worktree)) continue;
+    if (!existsSync(worktree)) {
+      parkedUnmatched.push({
+        record,
+        status: "absent",
+        detail: "the worktree is gone; this record is all that remains of it",
+      });
+    } else if (
+      ownership.available && worktreeHasActiveAgent(worktree, ownership.agents)
+    ) {
+      parkedUnmatched.push({
+        record,
+        status: "occupied",
+        detail: "an agent is working there again, so the record is stale",
+      });
+    } else {
+      parkedUnmatched.push({
+        record,
+        status: "settled",
+        detail: "the worktree is present and this survey proposes nothing for it",
+      });
+    }
+  }
+  parkedUnmatched.sort((left, right) =>
+    left.record.worktree.localeCompare(right.record.worktree)
+  );
+
   proposals.sort((left, right) =>
     `${left.session_slug ?? ""}:${left.worktree}`.localeCompare(
       `${right.session_slug ?? ""}:${right.worktree}`,
@@ -1267,7 +1429,7 @@ export function surveyWorktrees(
     )
   );
   return {
-    schema_version: 2,
+    schema_version: 3,
     type: "tend_survey",
     occasion,
     generated_at: new Date().toISOString(),
@@ -1280,9 +1442,11 @@ export function surveyWorktrees(
       downgraded_by_process: downgradedByProcess,
       downgraded_by_recent_activity: downgradedByRecentActivity,
       downgraded_by_ignored_content: downgradedByIgnoredContent,
+      parked: parkedProposals,
       proposals: proposals.length,
     },
     proposals,
+    parked_unmatched: parkedUnmatched,
     issues,
   };
 }
@@ -1327,8 +1491,14 @@ export function surveyFingerprint(survey: TendSurvey): string {
   });
 }
 
+/** A parked proposal is not a reason to wake anyone. The human looked at it,
+ * decided, and wrote the decision down; waking them to report their own
+ * decision back is the machine nagging. A machine whose every remaining
+ * proposal is parked therefore goes quiet — which is the property that makes
+ * parking worth doing rather than just skipping an item each run. */
 export function shouldWakeSelf(enabled: boolean, survey: TendSurvey): boolean {
-  return enabled && (survey.proposals.length > 0 || !survey.ownership_available);
+  const unparked = survey.proposals.some((proposal) => proposal.parked === null);
+  return enabled && (unparked || !survey.ownership_available);
 }
 
 function sessionId(agent: JsonObject): string | null {
@@ -1343,7 +1513,7 @@ function ownSession(agents: readonly JsonObject[]): string | null {
   return row ? sessionId(row) : null;
 }
 
-/** Session slugs outlive the process that learned them.
+/** Session identities outlive the process that learned them.
  *
  * The store used to be per-watcher and in memory only, which had two
  * consequences that showed up together. A watcher restart forgot every identity
@@ -1356,14 +1526,33 @@ function ownSession(agents: readonly JsonObject[]): string | null {
  *
  * The file sits beside the wake surveys rather than in any repository. The
  * constraint this code has always honoured is that tend writes no repository or
- * worktree metadata, and a temp file is neither. */
-function sessionSlugStorePath(): string {
+ * worktree metadata, and a temp file is neither.
+ *
+ * The filename still says slugs because that is what it held first, and
+ * renaming it would silently forget every identity already stored on this
+ * machine for no gain. A value that is a bare string is one of those older
+ * entries and loads as a slug with no session. */
+function sessionStorePath(): string {
   return join(tmpdir(), "tend-session-slugs.json");
 }
 
-export function loadSessionSlugs(
-  path: string = sessionSlugStorePath(),
-): Record<string, string> {
+function asIdentity(value: unknown): SessionIdentity | null {
+  if (typeof value === "string") {
+    return value === "" ? null : { slug: value, harness: null, session: null };
+  }
+  const row = asObject(value);
+  if (!row) return null;
+  const text = (key: string): string | null => {
+    const found = row[key];
+    return typeof found === "string" && found !== "" ? found : null;
+  };
+  const identity = { slug: text("slug"), harness: text("harness"), session: text("session") };
+  return identity.slug || identity.session ? identity : null;
+}
+
+export function loadSessionIdentities(
+  path: string = sessionStorePath(),
+): Record<string, SessionIdentity> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -1373,20 +1562,19 @@ export function loadSessionSlugs(
     return {};
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-  const remembered: Record<string, string> = {};
-  for (const [directory, slug] of Object.entries(parsed as Record<string, unknown>)) {
+  const remembered: Record<string, SessionIdentity> = {};
+  for (const [directory, value] of Object.entries(parsed as Record<string, unknown>)) {
     // A remembered directory that no longer exists belonged to a worktree that
     // has since been removed. Dropping it on load is what bounds the store.
-    if (typeof slug === "string" && slug !== "" && existsSync(directory)) {
-      remembered[directory] = slug;
-    }
+    const identity = asIdentity(value);
+    if (identity && existsSync(directory)) remembered[directory] = identity;
   }
   return remembered;
 }
 
-export function saveSessionSlugs(
-  remembered: Readonly<Record<string, string>>,
-  path: string = sessionSlugStorePath(),
+export function saveSessionIdentities(
+  remembered: Readonly<Record<string, SessionIdentity>>,
+  path: string = sessionStorePath(),
 ): void {
   // Written through a temp file and renamed: several watchers may run at once,
   // and a half-written store must never be readable as an empty one.
@@ -1401,6 +1589,339 @@ export function saveSessionSlugs(
       // Nothing to clean up.
     }
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * The parked document
+ *
+ * Everything above answers "what is here and what should happen to it".
+ * This answers a different question: what has to be written down before a
+ * worktree can be deleted without losing the work, and read back before the
+ * same decision is put to a human twice.
+ *
+ * The document is Markdown in the operator's Obsidian vault because its first
+ * reader is a human away from this terminal, possibly on a phone, possibly
+ * months later, wondering what a directory that no longer exists was for. Tend
+ * is its only writer, so the parser only has to understand what the renderer
+ * emits — but a human may still correct a line, so parsing is tolerant: a
+ * chunk it cannot read is skipped, never repaired and never fatal.
+ * ------------------------------------------------------------------ */
+
+const PARKED_HEADER = [
+  "# Parked",
+  "",
+  "Agents and worktrees put away for later, written by `/tend`. Each entry holds",
+  "what it takes to rebuild the worktree and resume the agent that was in it.",
+].join("\n");
+
+/** Entries are separated by a Markdown rule on its own line, which Obsidian
+ * renders as a divider and this parser splits on. */
+const PARK_SEPARATOR = "\n\n---\n\n";
+
+export function parkedFilePath(): string {
+  return process.env.TEND_PARKED_FILE ?? join(homedir(), "obsidian", "work", "Parked.md");
+}
+
+function quoted(value: string): string {
+  return `\`${value}\``;
+}
+
+function unquoted(value: string | undefined): string {
+  return (value ?? "").replace(/`/g, "").trim();
+}
+
+function backticked(value: string | undefined): string[] {
+  return [...(value ?? "").matchAll(/`([^`]*)`/g)].map((match) => match[1]);
+}
+
+/** The recipe, as prose a human can follow and a shell can take verbatim.
+ *
+ * Recreating comes first because resuming lands the agent in its recorded cwd,
+ * which is this worktree: resume before the directory exists and the agent
+ * comes back somewhere its own conversation does not describe. The snapshot is
+ * laid down with read-tree rather than checkout so that files the agent had
+ * deleted stay deleted, and the reset that follows returns them to being
+ * uncommitted changes rather than a staged commit waiting to happen. */
+export function unparkCommand(record: ParkRecord): string {
+  const create = record.branch
+    ? `git -C ${record.repository} worktree add ${record.worktree} ${record.branch}`
+    : `git -C ${record.repository} worktree add --detach ${record.worktree} ${record.head}`;
+  const restore = record.snapshot_ref
+    ? ` && git -C ${record.worktree} read-tree -u --reset ${record.snapshot_ref}` +
+      ` && git -C ${record.worktree} reset -q`
+    : "";
+  const steps = [`recreate ${quoted(`${create}${restore}`)}`];
+  if (record.session) {
+    steps.push(`resume ${quoted(`agentlaunch x-resume ${record.session}`)}`);
+  }
+  return steps.join(", then ");
+}
+
+function renderEntry(record: ParkRecord): string {
+  const lines = [`## ${record.name}`, "", record.summary, ""];
+  lines.push(`- **Parked:** ${record.parked_at} — ${record.reason}`);
+  lines.push(`- **Worktree:** ${quoted(record.worktree)}`);
+  lines.push(`- **Repository:** ${quoted(record.repository)}`);
+  lines.push(
+    record.branch
+      ? `- **Branch:** ${quoted(record.branch)} at ${quoted(record.head)}`
+      : `- **Branch:** detached at ${quoted(record.head)}`,
+  );
+  if (record.session) {
+    lines.push(`- **Session:** ${record.harness ?? "unknown"} ${quoted(record.session)}`);
+  }
+  // Only when it differs from the worktree root. An agent started in the
+  // worktree it works in is the ordinary case, and repeating the path there
+  // costs a line that says nothing.
+  if (record.cwd) lines.push(`- **Cwd:** ${quoted(record.cwd)}`);
+  if (record.snapshot_ref) {
+    const paths = `${record.snapshot_paths} uncommitted ${record.snapshot_paths === 1 ? "path" : "paths"}`;
+    lines.push(`- **Snapshot:** ${quoted(record.snapshot_ref)} — ${paths}`);
+  }
+  lines.push(`- **Unpark:** ${record.unpark}`);
+  return lines.join("\n");
+}
+
+export function renderParked(records: readonly ParkRecord[]): string {
+  return `${[PARKED_HEADER, ...records.map(renderEntry)].join(PARK_SEPARATOR)}\n`;
+}
+
+function parseEntry(chunk: string): ParkRecord | null {
+  const fields = new Map<string, string>();
+  let name = "";
+  let summary = "";
+  for (const line of chunk.split("\n")) {
+    const heading = /^##\s+(.+?)\s*$/.exec(line);
+    if (heading && name === "") {
+      name = heading[1];
+      continue;
+    }
+    const bullet = /^-\s+\*\*(.+?):\*\*\s*(.*)$/.exec(line);
+    if (bullet) {
+      fields.set(bullet[1].toLowerCase(), bullet[2].trim());
+      continue;
+    }
+    // The first prose line under the heading is the summary; anything after
+    // the bullets begin is a human's own note and is left alone.
+    if (name !== "" && summary === "" && fields.size === 0 && line.trim() !== "") {
+      summary = line.trim();
+    }
+  }
+  const worktree = unquoted(fields.get("worktree"));
+  const repository = unquoted(fields.get("repository"));
+  const branchField = fields.get("branch") ?? "";
+  const detached = /^detached\b/i.test(branchField);
+  const branchParts = backticked(branchField);
+  const head = detached ? (branchParts[0] ?? "") : (branchParts[1] ?? "");
+  // The header chunk, a human's own note, and a mangled entry all land here.
+  // None of them is an error: the document is a document first.
+  if (worktree === "" || repository === "" || head === "") return null;
+  const parkedField = fields.get("parked") ?? "";
+  const [parkedAt, ...restOfParked] = parkedField.split(" — ");
+  const sessionField = fields.get("session") ?? "";
+  const session = backticked(sessionField)[0] ?? null;
+  const harness = sessionField.split(/\s+/)[0] ?? "";
+  const snapshotField = fields.get("snapshot") ?? "";
+  const snapshotRef = backticked(snapshotField)[0] ?? null;
+  const record: ParkRecord = {
+    name: name === "" ? worktree.split("/").pop() ?? worktree : name,
+    summary,
+    reason: restOfParked.join(" — ").trim(),
+    parked_at: parkedAt.trim(),
+    worktree: normalize(worktree),
+    repository: normalize(repository),
+    branch: detached ? null : (branchParts[0] ?? null),
+    head,
+    harness: session && harness !== "" && harness !== "unknown" ? harness : null,
+    session,
+    cwd: unquoted(fields.get("cwd")) || null,
+    snapshot_ref: snapshotRef,
+    snapshot_paths: Number.parseInt(snapshotField.replace(/^[^—]*—\s*/, ""), 10) || 0,
+    unpark: fields.get("unpark") ?? "",
+  };
+  // A record whose recipe was lost still knows everything the recipe is made
+  // of, so rebuild it rather than handing back an entry that cannot be acted
+  // on. An edited recipe is kept: a human who corrected it meant it.
+  if (record.unpark === "") record.unpark = unparkCommand(record);
+  return record;
+}
+
+export function parseParked(text: string): ParkRecord[] {
+  const records: ParkRecord[] = [];
+  for (const chunk of text.split(/\n---\n/)) {
+    const record = parseEntry(chunk);
+    if (record) records.push(record);
+  }
+  return records;
+}
+
+export function loadParked(path: string = parkedFilePath()): ParkRecord[] {
+  try {
+    return parseParked(readFileSync(path, "utf8"));
+  } catch {
+    // No document yet is the ordinary state of a machine nobody has parked
+    // anything on.
+    return [];
+  }
+}
+
+export function saveParked(
+  records: readonly ParkRecord[],
+  path: string = parkedFilePath(),
+): void {
+  const staging = `${path}.${process.pid}.tmp`;
+  writeFileSync(staging, renderParked(records), "utf8");
+  renameSync(staging, path);
+}
+
+/** Everything the worktree holds that no commit does, captured as a commit
+ * without touching the worktree.
+ *
+ * This is what makes parking safe to follow with a removal. `git worktree
+ * remove` refuses on a dirty worktree and deletes silently once it is clean,
+ * so without this, "park it and delete it" would either be impossible for the
+ * worktree of an agent that was mid-edit — which is most of them — or would
+ * quietly destroy the edits. A separate index file is the whole trick: read
+ * HEAD into it, add everything Git is willing to track, and write a tree. The
+ * real index and every file in the worktree are untouched, so a snapshot is
+ * safe to take even while something is working there.
+ *
+ * Ignored content is deliberately not captured: `add -A` honours .gitignore,
+ * and a dependency tree does not belong in the object database. That is the
+ * same content the ignored-content gate already refuses to let a removal
+ * destroy unrecognized, so the two rules agree. */
+function captureSnapshot(
+  worktree: string,
+  head: string,
+  name: string,
+): { ref: string; paths: number } | null {
+  const status = git(worktree, ["status", "--porcelain=v1", "--untracked-files=normal"]);
+  if (status.code !== 0) return null;
+  const paths = status.stdout.split("\n").filter((line) => line !== "").length;
+  if (paths === 0) return null;
+  const index = join(tmpdir(), `tend-park-index-${process.pid}-${Date.now()}`);
+  const env = {
+    GIT_INDEX_FILE: index,
+    // The snapshot commit is tend's, not the operator's, and it must not
+    // depend on a repository having configured an identity at all.
+    GIT_AUTHOR_NAME: "tend",
+    GIT_AUTHOR_EMAIL: "tend@localhost",
+    GIT_COMMITTER_NAME: "tend",
+    GIT_COMMITTER_EMAIL: "tend@localhost",
+  };
+  try {
+    if (git(worktree, ["read-tree", "HEAD"], env).code !== 0) return null;
+    if (git(worktree, ["add", "-A"], env).code !== 0) return null;
+    const tree = git(worktree, ["write-tree"], env);
+    if (tree.code !== 0) return null;
+    const commit = git(
+      worktree,
+      ["commit-tree", chomp(tree.stdout), "-p", head, "-m", `tend park snapshot: ${name}`],
+      env,
+    );
+    if (commit.code !== 0) return null;
+    const ref = `refs/tend-park/${name}`;
+    if (git(worktree, ["update-ref", ref, chomp(commit.stdout)], env).code !== 0) return null;
+    return { ref, paths };
+  } finally {
+    try {
+      unlinkSync(index);
+    } catch {
+      // Never written, or already gone.
+    }
+  }
+}
+
+export interface ParkRequest {
+  worktree: string;
+  summary: string;
+  reason: string;
+  file?: string;
+  /** The live roster, preferred over the store: an agent still in the worktree
+   * is a better witness to its own identity than anything remembered. */
+  agents?: readonly JsonObject[];
+  sessions?: Readonly<Record<string, SessionIdentity>>;
+  now?: Date;
+}
+
+/** Write one park record, replacing any earlier record for the same worktree.
+ *
+ * Parking does not remove anything and does not need the worktree to be
+ * inactive: a human may park an agent that is still working, and the ordinary
+ * survey still decides whether the worktree may then be removed. What parking
+ * establishes is that removal would no longer lose anything. */
+export function parkWorktree(request: ParkRequest): ParkRecord {
+  const worktree = normalize(request.worktree);
+  const top = git(worktree, ["rev-parse", "--show-toplevel"]);
+  if (top.code !== 0) throw new Error(`${worktree} is not inside a Git repository`);
+  if (normalize(chomp(top.stdout)) !== worktree) {
+    throw new Error(`${worktree} is inside a worktree rather than being one`);
+  }
+  const commonDir = resolveCommonDir(worktree);
+  if (!commonDir) throw new Error(`could not resolve the Git common directory for ${worktree}`);
+  const repository = mainWorktreeFor(commonDir, worktree);
+  const head = git(worktree, ["rev-parse", "HEAD"]);
+  if (head.code !== 0) throw new Error(`${worktree} has no HEAD commit to park`);
+  const branchRef = git(worktree, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  const branch = branchRef.code === 0 ? chomp(branchRef.stdout) : null;
+  const live = (request.agents ?? []).find((agent) =>
+    agentPaths(agent).some((path) => pathIsWithin(path, worktree))
+  );
+  const identity = live
+    ? identityOf(live)
+    : identityForWorktree(request.sessions ?? {}, worktree);
+  const name = identity?.slug ?? worktree.split("/").pop() ?? worktree;
+  const agentCwd = live && typeof live["cwd"] === "string" ? normalize(live["cwd"]) : null;
+  const snapshot = captureSnapshot(worktree, chomp(head.stdout), name);
+  const record: ParkRecord = {
+    name,
+    summary: request.summary,
+    reason: request.reason,
+    parked_at: (request.now ?? new Date()).toISOString().slice(0, 10),
+    worktree,
+    repository,
+    branch,
+    head: chomp(head.stdout),
+    harness: identity?.harness ?? null,
+    session: identity?.session ?? null,
+    cwd: agentCwd && agentCwd !== worktree ? agentCwd : null,
+    snapshot_ref: snapshot?.ref ?? null,
+    snapshot_paths: snapshot?.paths ?? 0,
+    unpark: "",
+  };
+  record.unpark = unparkCommand(record);
+  const file = request.file ?? parkedFilePath();
+  const kept = loadParked(file).filter((existing) => existing.worktree !== worktree);
+  saveParked([...kept, record], file);
+  return record;
+}
+
+export interface UnparkResult {
+  record: ParkRecord;
+  /** True when the snapshot ref was left in place because the worktree it
+   * restores into does not exist. Dropping the record is bookkeeping; dropping
+   * the only copy of uncommitted work is not. */
+  snapshot_kept: boolean;
+}
+
+export function unparkWorktree(
+  worktree: string,
+  file: string = parkedFilePath(),
+): UnparkResult | null {
+  const target = normalize(worktree);
+  const records = loadParked(file);
+  const record = records.find((existing) => existing.worktree === target);
+  if (!record) return null;
+  saveParked(records.filter((existing) => existing !== record), file);
+  let kept = false;
+  if (record.snapshot_ref) {
+    // The ref goes only once the worktree is back, because a worktree that is
+    // still absent means the snapshot was never laid down and this ref is the
+    // only place that work exists.
+    if (existsSync(target)) git(record.repository, ["update-ref", "-d", record.snapshot_ref]);
+    else kept = true;
+  }
+  return { record, snapshot_kept: kept };
 }
 
 /** How many of this watcher's survey files to leave in place. A wake the agent
@@ -1652,12 +2173,38 @@ function parseOptions(argv: string[]): WatchOptions {
       once: { type: "boolean", default: false },
       "wake-self": { type: "boolean", default: false },
       "assert-action": { type: "string" },
+      "parked-file": { type: "string" },
+      park: { type: "string" },
+      unpark: { type: "string" },
+      summary: { type: "string" },
+      reason: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
     strict: true,
   });
   if (parsed.values.help) {
-    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH]... (default: $HOME) [--socket PATH] [--sweep-interval SECONDS]\n+                [--activity-window SECONDS]\n+                [--worktree PATH]...\n+                [--assert-action ACTION]\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits. With --assert-action, --once exits\n+non-zero unless every proposal carries that action, so a caller can gate an\n+operation on the survey rather than on its own re-derived checks.\n`);
+    process.stdout.write(
+      [
+        "Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...",
+        "                [--worktree-root PATH]... (default: $HOME) [--socket PATH]",
+        "                [--sweep-interval SECONDS] [--activity-window SECONDS]",
+        "                [--worktree PATH]... [--assert-action ACTION]",
+        "       watch.ts --park PATH --summary TEXT --reason TEXT",
+        "       watch.ts --unpark PATH",
+        "                [--parked-file PATH] (default: ~/obsidian/work/Parked.md)",
+        "",
+        "Emits read-only tend_survey JSON records. The long-running mode watches Git and",
+        "Herdr, while --once prints one snapshot and exits. With --assert-action, --once",
+        "exits non-zero unless every proposal carries that action, so a caller can gate an",
+        "operation on the survey rather than on its own re-derived checks.",
+        "",
+        "--park records one agent and its worktree in the parked document: the path,",
+        "branch and commit to rebuild from, the session id that resumes the agent, and a",
+        "snapshot of whatever was never committed — so the worktree can be removed",
+        "without losing it. --unpark drops that record once the work is back.",
+        "",
+      ].join("\n"),
+    );
     process.exit(0);
   }
   return {
@@ -1676,6 +2223,11 @@ function parseOptions(argv: string[]): WatchOptions {
     once: parsed.values.once ?? false,
     wakeSelf: parsed.values["wake-self"] ?? false,
     assertAction: parsed.values["assert-action"],
+    parkedFile: normalize(parsed.values["parked-file"] ?? parkedFilePath()),
+    park: parsed.values.park ? normalize(parsed.values.park) : undefined,
+    unpark: parsed.values.unpark ? normalize(parsed.values.unpark) : undefined,
+    summary: parsed.values.summary,
+    reason: parsed.values.reason,
   };
 }
 
@@ -1686,9 +2238,66 @@ if (import.meta.main) {
     process.exit(1);
   }
 
+  if (options.park) {
+    if (!options.summary || !options.reason) {
+      process.stderr.write(
+        "tend: --park needs both --summary (one sentence on what this agent and " +
+          "worktree are) and --reason (why it is being put away)\n",
+      );
+      process.exit(2);
+    }
+    const ownership = queryAgents(options.herdrBin);
+    try {
+      const record = parkWorktree({
+        worktree: options.park,
+        summary: options.summary,
+        reason: options.reason,
+        file: options.parkedFile,
+        agents: ownership.agents,
+        sessions: loadSessionIdentities(),
+      });
+      process.stdout.write(`${JSON.stringify({ type: "tend_park", record })}\n`);
+      process.exit(0);
+    } catch (error) {
+      process.stderr.write(
+        `tend: cannot park ${options.park}: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+      process.exit(1);
+    }
+  }
+
+  if (options.unpark) {
+    const result = unparkWorktree(options.unpark, options.parkedFile);
+    if (!result) {
+      process.stderr.write(`tend: nothing parked at ${options.unpark}\n`);
+      process.exit(1);
+    }
+    if (result.snapshot_kept) {
+      process.stderr.write(
+        `tend: kept ${result.record.snapshot_ref} — ${result.record.worktree} does not exist, ` +
+          "so that ref is still the only copy of the uncommitted work\n",
+      );
+    }
+    process.stdout.write(`${JSON.stringify({ type: "tend_unpark", ...result })}\n`);
+    process.exit(0);
+  }
+
   if (options.once) {
+    // A snapshot contributes to the store as well as reading it. Every tend
+    // run is a chance to learn an identity that will not be available later:
+    // by the time a worktree becomes a proposal its agent has left, and by the
+    // time it is parked, its session id exists nowhere else on the machine.
+    const ownership = queryAgents(options.herdrBin);
+    const remembered = loadSessionIdentities();
+    rememberSessions(remembered, ownership.agents);
+    saveSessionIdentities(remembered);
     const survey = surveyWorktrees(
-      { ...options, sessionSlugs: loadSessionSlugs() },
+      {
+        ...options,
+        ownership,
+        sessions: remembered,
+        parked: loadParked(options.parkedFile),
+      },
       "snapshot",
     );
     process.stdout.write(`${JSON.stringify(survey)}\n`);
@@ -1696,7 +2305,7 @@ if (import.meta.main) {
   }
 
   let lastFingerprint = "";
-  const rememberedSessionSlugs: Record<string, string> = loadSessionSlugs();
+  const rememberedSessions: Record<string, SessionIdentity> = loadSessionIdentities();
   let debounce: ReturnType<typeof setTimeout> | null = null;
   const gitWatches = new GitWatchSet();
   let publish: (occasion: TendSurvey["occasion"], wake: boolean) => void;
@@ -1710,12 +2319,16 @@ if (import.meta.main) {
   };
   publish = (occasion: TendSurvey["occasion"], shouldWake: boolean) => {
     const ownership = queryAgents(options.herdrBin);
-    rememberSessionSlugs(rememberedSessionSlugs, ownership.agents);
-    saveSessionSlugs(rememberedSessionSlugs);
+    rememberSessions(rememberedSessions, ownership.agents);
+    saveSessionIdentities(rememberedSessions);
     const survey = surveyWorktrees({
       ...options,
       ownership,
-      sessionSlugs: rememberedSessionSlugs,
+      sessions: rememberedSessions,
+      // Re-read every publish: the document is edited by tend runs in other
+      // panes and by the human in Obsidian, and a watcher holding a stale copy
+      // would keep waking about work somebody already put away.
+      parked: loadParked(options.parkedFile),
     }, occasion);
     const fingerprint = surveyFingerprint(survey);
     if (fingerprint === lastFingerprint) return;

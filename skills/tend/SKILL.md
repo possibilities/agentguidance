@@ -1,6 +1,6 @@
 ---
 name: tend
-description: Watch inactive Git worktrees after their agents stop, wherever those worktrees live, then notify the human with a read-only minisketch for removing landed worktrees, catching divergent branches up to their repository's trunk, or inspecting ambiguous leftovers. Reads a carried fork's declared branch model from its own supervisor config, so an integration-based repository is judged against integration and its carry heads are never proposed for removal. Use for /tend or when asked to watch and triage inactive agent worktrees; it proposes lifecycle work but does not perform it.
+description: Watch inactive Git worktrees after their agents stop, wherever those worktrees live, then notify the human with a read-only minisketch for removing landed worktrees, catching divergent branches up to their repository's trunk, or inspecting ambiguous leftovers. Parks an agent and its worktree durably in an Obsidian document — worktree, branch, commit, session id, and a snapshot of uncommitted work — so the worktree can be deleted now and the whole thing rebuilt and resumed later. Reads a carried fork's declared branch model from its own supervisor config, so an integration-based repository is judged against integration and its carry heads are never proposed for removal. Use for /tend, when asked to watch and triage inactive agent worktrees, or when asked to park an agent and its worktree for later; the survey itself is read-only and every lifecycle action waits for the human.
 disable-model-invocation: true
 ---
 
@@ -27,11 +27,15 @@ bun scripts/watch.ts --once
 
 The one JSON object is the current `tend_survey`. Git answers which linked
 worktrees exist and how each branch relates to its repository's declared
-trunk; Herdr answers whether any agent is still in one. Each proposal's
-`session_slug` is Herdr's generated conversation name from
+trunk; Herdr answers whether any agent is still in one; the parked document
+answers which of them a human has already decided about, and is read on every
+run.
+
+Each proposal's `session_slug` is Herdr's generated conversation name from
 `tokens.conversation`, retained after that agent exits. The retention is durable
-and shared: slugs are kept in a temp-directory store, so they survive a watcher
-restart and `--once` can read them too. That matters more than it sounds,
+and shared: a temp-directory store keeps each agent's slug, harness and native
+session id, so they survive a watcher restart, `--once` can read them, and
+every run contributes what it saw. That matters more than it sounds,
 because a worktree with a live agent is protected and never becomes a proposal —
 a proposal's slug can therefore only ever be a remembered one, and before the
 store existed `session_slug` was structurally always null in snapshot mode and
@@ -216,9 +220,12 @@ or guess another trunk.
 
 ## Notify and minisketch
 
-When a survey has proposals, or Herdr ownership is unavailable and the watch is
-therefore blind, load the `notify` skill and post one grouped notification
-(`tend-worktrees`) saying what needs a decision. Then respond in this shape:
+When a survey has proposals the human has not already parked, or Herdr
+ownership is unavailable and the watch is therefore blind, load the `notify`
+skill and post one grouped notification (`tend-worktrees`) saying what needs a
+decision. A survey whose every proposal is parked needs no notification: the
+decision was already made, and reporting it back is the machine nagging. Then
+respond in this shape:
 
 ```markdown
 ## Tend
@@ -235,6 +242,10 @@ therefore blind, load the `notify` skill and post one grouped notification
   clean, and has no live Herdr agent.
 - Inspect `<session-slug>` (`<repository>`, worktree `<worktree>`) before
   lifecycle work: `<reason>`.
+- Parked `<session-slug>` (`<repository>`, worktree `<worktree>`) since
+  `<parked-at>`: `<reason>`. Still `<action>` when you want it back.
+- Parked and gone: `<session-slug>` (`<repository>`, branch `<branch>`) —
+  `<summary>`. Rebuild it with the recorded command when you want it back.
 
 No actions have been taken.
 ```
@@ -242,6 +253,13 @@ No actions have been taken.
 A removal bullet says what the removal costs. When the worktree holds ignored
 content, name it: the branch retains the tracked bytes and nothing retains
 these. Say "the branch will be retained" only where it is the whole truth.
+
+Parked bullets go last and are reports, not questions. List a parked proposal
+once, so the human can see the item is still there and change their mind; do
+not re-argue it. A `parked_unmatched` record with status `absent` is worth a
+bullet of its own precisely because nothing else on the machine mentions it —
+the worktree is gone and this record is what remains. An `occupied` record
+means somebody unparked by hand: offer to drop the entry.
 
 Use one bullet per proposal and always lead with `session_slug`; the random
 worktree name is only parenthetical location context for that named session.
@@ -280,6 +298,10 @@ stale evidence. This matters most right after a catch-up, whose own writes land
 inside the activity window and will downgrade the next proposals in the list;
 that is tend seeing itself, and it is not evidence of another owner.
 
+An item the human parks is done for this run — do not raise it again, here or
+in a later run, until they unpark it. Its record is in the parked document
+below, and a proposal that carries one is reported rather than asked about.
+
 Keep going until every proposal is either done or explicitly parked. Then close
 the run by saying what remains and why: parked items with their reasons,
 repositories that could not be assessed, and anything a downgrade held back. A
@@ -287,6 +309,70 @@ run that ends with items neither done nor parked has not finished tending.
 
 A human who stops answering ends the loop. Do not proceed through the remainder
 on the strength of earlier approvals.
+
+## Park what will not be finished now
+
+Parking is how a run ends with nothing left dangling. A parked item is not a
+skipped one: it is recorded durably enough that the worktree can be deleted and
+the whole thing — worktree, uncommitted work, and the agent that was doing it —
+reconstituted later. That is the difference between putting work away and
+losing it, and it is why parking is worth more than remembering to ask again
+next time.
+
+`~/obsidian/work/Parked.md` is that record, and tend is its only writer:
+
+```sh
+bun scripts/watch.ts --park PATH \
+  --summary "one sentence on what this agent and worktree are" \
+  --reason "why it is being put away"
+```
+
+Never write or edit the document by hand. The helper reads the branch, the
+exact commit, and the session identity from Git and the Surface rather than
+from recollection; a park whose sha or session id is misremembered is a park
+that cannot be unparked, which is the only way this feature fails. It writes:
+the worktree path, its repository, the branch and full sha1, the harness and
+native session id, the agent's cwd when it differs from the worktree, a
+snapshot ref when there was uncommitted work, and the command chain that
+rebuilds all of it.
+
+The summary is the one field nothing can derive, and it is what the document
+is for. Months later the worktree is a path that no longer exists and the
+branch name says nothing; write the sentence a stranger would need to decide
+whether to bring it back. The reason is separate and answers a different
+question — not what this is, but why it is sitting still.
+
+**Parking captures uncommitted work, so removal stops destroying it.** Before
+writing the entry, the helper commits everything Git is willing to track —
+modifications, untracked files, deletions — under `refs/tend-park/<name>`,
+using a separate index so nothing in the worktree or its index moves. That
+matters because the interesting worktree to park is an agent's half-finished
+one, and `git worktree remove` deletes uncommitted work without a word once
+the worktree is clean enough to go. Ignored content is deliberately not
+captured; the ignored-content downgrade still holds those worktrees back.
+
+Parking does not remove anything and does not require the worktree to be
+inactive — a human may park an agent that is still working. Removal after a
+park is still ordinary lifecycle work under every gate in the next section:
+the park establishes that removal would lose nothing, never that it is
+permitted.
+
+**Every survey reads the document back.** A proposal whose worktree is parked
+carries the record in `parked`, counted in `counts.parked`. A record matching
+no proposal appears in `parked_unmatched` with one of three statuses, and each
+asks the human something different:
+
+- `absent` — the worktree is gone. This is parking having worked, and the
+  record is now the only thing on the machine that knows the work existed.
+- `occupied` — an agent is in there again, so somebody unparked it by hand and
+  the record is stale. Offer to drop it.
+- `settled` — the worktree is present and this survey proposes nothing for it.
+
+Unparking is the recorded command chain, run as ordinary work, followed by
+`bun scripts/watch.ts --unpark PATH` to drop the entry. Run them in that order:
+`--unpark` deletes the snapshot ref once the worktree is back, and deliberately
+keeps it when the worktree is still absent, because then the ref is the only
+copy of that uncommitted work. It says so when it keeps one.
 
 ## Before acting on a proposal
 
@@ -444,6 +530,10 @@ interpolates the pid of a short-lived helper and the quiet-window count, and
 carries a `reason_code` beside the prose at all — a proposal changing category
 under an unchanged `inspect` is a real change and must still wake, while a
 helper respawning under a new pid must not.
+
+A parked proposal never wakes anyone: the human decided and wrote it down, so
+a machine whose every remaining proposal is parked goes quiet. That is the
+property that makes parking worth doing rather than skipping an item each run.
 
 `--wake-self` addresses this pane's current agent session through AgentSurface,
 so the same path works for Claude and Codex. The wake does not carry the survey

@@ -25,6 +25,18 @@ performing it. It is neither fork maintenance nor authority to integrate or
 reap peer work.
 _Avoid_: maintain, supervise, reap.
 
+**Parked document** — `~/obsidian/work/Parked.md`, the Markdown record of
+agents and worktrees put away for later: enough per entry to rebuild the
+worktree and resume the agent, entries separated by a Markdown rule. Tend is
+its only writer and reads it on every survey.
+_Avoid_: park file, parking lot, backlog.
+
+**Park** — recording an agent and its worktree durably enough that the worktree
+can be deleted and the work reconstituted, including a snapshot of whatever was
+never committed. Not a deferral: an item nobody wrote down is unresolved, not
+parked.
+_Avoid_: defer, snooze, shelve, skip.
+
 **Model invocation policy** — the portable fact recorded by
 `disable-model-invocation` in a skill template's `SKILL.md` frontmatter;
 absent or false means model-invocable. AgentStart derives Codex's inverse

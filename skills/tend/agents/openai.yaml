@@ -1,4 +1,4 @@
 interface:
   display_name: "Tend"
-  short_description: "Triage inactive Herdr worktrees without changing them"
-  default_prompt: "Use $tend to watch inactive Herdr worktrees and propose safe cleanup or catch-up work without performing it."
+  short_description: "Triage inactive Herdr worktrees, and park them for later"
+  default_prompt: "Use $tend to watch inactive Herdr worktrees, propose safe cleanup or catch-up work, and park anything that should be put away for later."
