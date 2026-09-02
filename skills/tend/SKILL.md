@@ -59,6 +59,27 @@ its own work in the window and hold off; either wait it out, or pass
 `--activity-window 0`, which is a deliberate assertion that the caller has
 established by other means that nothing is working there.
 
+A fourth check asks a different question from the other three: not who is
+present, but what removal destroys. `clean` and containment together say every
+*tracked* byte is held by a branch. Neither says anything about ignored
+content — Git excludes it from status by design, and `git worktree remove`
+deletes it without a word, held by nothing. So every proposal reports
+`ignored_paths`, and a proposal that ends in a removal is reduced to `inspect`
+when any of them is not obviously reproducible (`ignored_unrecognized`,
+counted in `counts.downgraded_by_ignored_content`). A dependency tree or build
+output never blocks; a receipt, a ledger or a gate cache does. The judgement
+distinguishes two kinds of name, because they behave differently as ancestors.
+A tool-owned directory — `node_modules`, `.venv`, `.pytest_cache` — is
+unambiguous wherever it appears, so everything beneath one is reproducible
+too; Git does not always collapse an ignored directory, and a `.pytest_cache`
+carrying its own `.gitignore` is reported file by file, whose names alone
+("README.md") would otherwise read as irreplaceable. A generic name —
+`build`, `dist`, `target` — counts only as the entry itself, because
+`evidence/build/receipt.json` is a receipt that happens to live under a
+directory called build, and letting that name claim its descendants is exactly
+how the work is lost.
+Only removals are gated: a catch-up rebase deletes no files.
+
 A process found there does **not** protect the worktree, because a live agent
 the roster missed and a helper some harness leaked and never reaped are
 indistinguishable from outside — pid, parent, and age all fail to separate
@@ -191,6 +212,10 @@ therefore blind, load the `notify` skill and post one grouped notification
 No actions have been taken.
 ```
 
+A removal bullet says what the removal costs. When the worktree holds ignored
+content, name it: the branch retains the tracked bytes and nothing retains
+these. Say "the branch will be retained" only where it is the whole truth.
+
 Use one bullet per proposal and always lead with `session_slug`; the random
 worktree name is only parenthetical location context for that named session.
 Never substitute the worktree name for a missing slug: identify it as an older
@@ -203,6 +228,64 @@ Do not inflate an empty survey into a report: say there is nothing to tend.
 This first version ends at the minisketch. A later explicit request to carry
 out one of its bullets is new work under the session's ordinary approval and
 safety guidance, not authority inherited from `/tend`.
+
+## Before acting on a proposal
+
+Everything above produces evidence. The moment a human asks for one of these
+bullets to be carried out, it becomes ordinary work under the session's own
+approval and safety guidance — and that is where this session's hazards live,
+so they are named here rather than left to be rediscovered.
+
+**A survey is a snapshot, not a lease.** Worktrees on this machine have been
+observed flipping between clean and dirty within minutes, so a proposal
+minutes old may already be wrong. Every proposal therefore carries
+`state_digest`, a hash of HEAD plus the full porcelain status with ignored
+entries included. Re-run the survey immediately before acting and compare: if
+the digest moved, the worktree moved, and the proposal must be re-derived
+rather than executed. Verify per worktree, not per survey.
+
+**An absent agent row is not an absent owner.** An agent that drives a
+worktree from somewhere else never appears as its owner, so when a proposal is
+downgraded — or when anything nearby is churning — ask the owner rather than
+inferring one. Address by session id, not by name:
+`agentsurface agents --all` is the authoritative listing — name, session,
+harness, place and cwd — and `agentsurface message <session-id> "text"` then
+needs no name resolution at all and reaches Claude and Codex alike. Names are
+the trap, because a Claude session has two: its cross-session peer name and
+its surface name, taken from the conversation title and changing whenever that
+is renamed. A question addressed by the wrong one resolves to nothing, and
+some senders then guess at the nearest live session, so the answer arrives in
+somebody else's transcript. That misroute is indistinguishable from silence,
+and silence reads as "nobody claims it" — which is how a removal proceeds
+against an owner who did in fact answer. Read the listing before theorising
+about the topology.
+
+**Remove with `git worktree remove <exact path>` and no `--force`**, so Git
+itself refuses on any dirt that appeared since the survey. Never fall back to
+`rm -rf`: a removal is supposed to be recoverable because the branch is
+retained, and that property holds only for a registered worktree. Confirm the
+target is one — `rev-parse --show-toplevel` equals the path — rather than
+trusting a name, and audit ignored content before deleting anything, since a
+`remove_worktree` proposal has not established that nothing unrecoverable is
+there beyond the reproducible-artefact rule above.
+
+**Back a catch-up out, do not push through it.** Record each branch head under
+`refs/tend-backup/<timestamp>/` and verify the ref resolves before rebasing;
+abort on any non-zero exit and assert HEAD returned to the recorded head with
+no rebase in progress.
+
+**Verifying that a rebase lost nothing is easy to get wrong, in both
+directions.** A rebase legitimately drops commits already upstream, so a
+branch collapsing onto trunk is usually correct rather than alarming — but
+proving it needs a check that measures the right thing. `git log --format=%H |
+git patch-id` yields nothing, because that stream carries no diff; it needs
+`git log -p`. `git cherry` silently skips merge commits. `git merge-tree` of a
+stale tip against trunk conflicts from staleness rather than from unique work,
+and so does replaying one commit whose neighbourhood trunk has since changed.
+What answers the question is per-commit patch-id against
+`git log -p --no-merges <merge-base>..<trunk>`, falling back to
+`git log -S<distinctive string> <trunk>` when a patch-id misses because context
+shifted. Check the check before reporting loss.
 
 ## Keep watch
 

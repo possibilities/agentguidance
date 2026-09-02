@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
+import { createHash } from "node:crypto";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -59,6 +60,17 @@ export interface TendProposal {
    * it could not be read. Evidence, always reported: a small number is the
    * cheapest sign that something is working here. */
   last_activity_seconds: number | null;
+  /** Ignored entries living in the worktree. Reported always, because `clean`
+   * never covered them: Git excludes ignored files from status by design and
+   * `git worktree remove` deletes them without a word. */
+  ignored_paths: string[];
+  /** The subset of `ignored_paths` that is not obviously reproducible. A
+   * removal proposal holding any of these is reduced to `inspect`. */
+  ignored_unrecognized: string[];
+  /** Digest of HEAD plus the full porcelain status, ignored entries included.
+   * An executor recomputes it immediately before acting; a mismatch means the
+   * worktree moved since the survey and the proposal must be re-derived. */
+  state_digest: string | null;
   session_slug: string | null;
   repository: string;
   worktree: string;
@@ -100,6 +112,9 @@ export interface TendSurvey {
      * shell or an editor that holds no descriptor and registers no agent row,
      * and the only trace it leaves between sweeps is a fresh mtime. */
     downgraded_by_recent_activity: number;
+    /** Removal proposals reduced to `inspect` because the worktree holds
+     * ignored content that no branch would retain. */
+    downgraded_by_ignored_content: number;
     proposals: number;
   };
   proposals: TendProposal[];
@@ -569,6 +584,45 @@ export function publishedBranchNames(repository: string): PublicationScan {
   return { names, available: true };
 }
 
+/** Ignored content a removal may destroy without asking, in two tiers,
+ * because the two behave differently as ancestors.
+ *
+ * A tool-owned directory is unambiguous wherever it appears: nothing but pip,
+ * pytest or npm writes `.venv`, `.pytest_cache` or `node_modules`, so anything
+ * beneath one is theirs too. That matters because Git does not always collapse
+ * an ignored directory — a `.pytest_cache` containing its own `.gitignore` is
+ * reported file by file, and judging those files on their own names
+ * ("README.md", "CACHEDIR.TAG") would flag a cache as irreplaceable.
+ *
+ * A generic name is only safe as the entry itself. `build`, `dist` and
+ * `target` are ordinary English, and `evidence/build/receipt.json` is a
+ * receipt that happens to sit under one. Treating those as rebuildable
+ * ancestors is precisely how a receipt gets deleted with nothing holding it. */
+const TOOL_OWNED_IGNORED = new Set([
+  "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache",
+  ".ruff_cache", ".zig-cache", "zig-cache", ".next", ".turbo", ".parcel-cache",
+  ".nyc_output", ".gradle", ".terraform", "Pods", "DerivedData", ".cache",
+]);
+
+const GENERIC_BUILD_NAMES = new Set([
+  "dist", "build", "out", "target", "zig-out", "coverage", ".DS_Store",
+]);
+
+const REBUILDABLE_SUFFIXES = [".pyc", ".pyo", ".o", ".a", ".class", ".log", ".tmp"];
+
+/** Whether an ignored entry is obviously reproducible. Unknown means not
+ * reproducible: this gates a deletion, so the default has to be "ask". */
+export function isRebuildableIgnored(entry: string): boolean {
+  const trimmed = entry.replace(/\/+$/, "");
+  if (trimmed === "") return false;
+  const segments = trimmed.split("/");
+  const last = segments[segments.length - 1] ?? "";
+  // A tool-owned directory anywhere on the path claims everything under it.
+  if (segments.some((segment) => TOOL_OWNED_IGNORED.has(segment))) return true;
+  if (GENERIC_BUILD_NAMES.has(last)) return true;
+  return REBUILDABLE_SUFFIXES.some((suffix) => last.endsWith(suffix));
+}
+
 function inspectWorktree(
   repository: string,
   record: WorktreeRecord,
@@ -577,11 +631,36 @@ function inspectWorktree(
   sessionSlug: string | null,
   published: PublicationScan,
 ): TendProposal {
-  const status = git(record.path, ["status", "--porcelain=v1", "--untracked-files=normal"]);
-  const clean = status.code === 0 && status.stdout.trim() === "";
+  // One status call answers three questions: whether the worktree is clean,
+  // what ignored content a removal would silently destroy, and — hashed with
+  // HEAD — a digest an executor can recompute to prove nothing moved between
+  // this survey and the moment it acts.
+  const status = git(record.path, [
+    "status",
+    "--porcelain=v1",
+    "--untracked-files=normal",
+    "--ignored=matching",
+  ]);
+  const lines = status.code === 0
+    ? status.stdout.split("\n").filter((line) => line !== "")
+    : [];
+  const ignoredPaths = lines
+    .filter((line) => line.startsWith("!! "))
+    .map((line) => line.slice(3));
+  // Clean still means "nothing Git tracks or reports as untracked". Ignored
+  // entries were never part of that judgement and do not become part of it
+  // here; they are reported separately because they gate a different question.
+  const clean = status.code === 0 && lines.every((line) => line.startsWith("!! "));
+  const ignoredUnrecognized = ignoredPaths.filter((entry) => !isRebuildableIgnored(entry));
+  const stateDigest = status.code === 0
+    ? createHash("sha256").update(`${record.head}\n${lines.join("\n")}`).digest("hex").slice(0, 16)
+    : null;
   const counts = aheadBehind(record.path, model.trunk) ?? { ahead: 0, behind: 0 };
   const base = {
     last_activity_seconds: worktreeLastActivitySeconds(record.path),
+    ignored_paths: ignoredPaths,
+    ignored_unrecognized: ignoredUnrecognized,
+    state_digest: stateDigest,
     session_slug: sessionSlug,
     repository,
     worktree: record.path,
@@ -856,6 +935,7 @@ export function surveyWorktrees(
   let protectedByAgent = 0;
   let downgradedByProcess = 0;
   let downgradedByRecentActivity = 0;
+  let downgradedByIgnoredContent = 0;
   const activityWindow = options.activityWindowSeconds ?? DEFAULT_ACTIVITY_WINDOW_SECONDS;
 
   if (!ownership.available) {
@@ -978,6 +1058,30 @@ export function surveyWorktrees(
         });
         continue;
       }
+      // Fourth check, and the only one about what removal destroys rather than
+      // who is present. `clean` and containment together say every *tracked*
+      // byte is held by a branch; neither says anything about ignored content,
+      // which `git worktree remove` deletes silently and no branch retains. A
+      // build tree is fine to lose, so it never blocks; anything else is the
+      // human's call. Only removal-bearing actions are gated — a catch-up
+      // rebase deletes no files, so ignored content is irrelevant to it.
+      const destroys = proposal.ignored_unrecognized;
+      if (
+        (proposal.action === "remove_worktree" || proposal.action === "catch_up_and_remove") &&
+        destroys.length > 0
+      ) {
+        downgradedByIgnoredContent += 1;
+        const named = destroys.slice(0, 3).join(", ");
+        const more = destroys.length > 3 ? ` and ${destroys.length - 3} more` : "";
+        proposals.push({
+          ...proposal,
+          action: "inspect",
+          reason:
+            `${proposal.reason}, but removing it would destroy ignored content no branch ` +
+            `retains: ${named}${more}`,
+        });
+        continue;
+      }
       proposals.push(proposal);
     }
   }
@@ -1005,6 +1109,7 @@ export function surveyWorktrees(
       protected_by_agent: protectedByAgent,
       downgraded_by_process: downgradedByProcess,
       downgraded_by_recent_activity: downgradedByRecentActivity,
+      downgraded_by_ignored_content: downgradedByIgnoredContent,
       proposals: proposals.length,
     },
     proposals,

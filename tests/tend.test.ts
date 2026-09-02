@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import {
   findRepositories,
+  isRebuildableIgnored,
   publishedBranchNames,
   rememberSessionSlugs,
   resolveModel,
@@ -115,6 +116,98 @@ describe("Tend survey", () => {
     });
     expect(git(repository, "show-ref", "--heads")).toBe(refsBefore);
     expect(git(repository, "worktree", "list", "--porcelain")).toBe(worktreesBefore);
+  });
+
+  test("refuses to remove a worktree holding ignored content no branch retains", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    writeFileSync(join(worktree, ".gitignore"), "receipts/\n");
+    git(worktree, "add", ".gitignore");
+    git(worktree, "commit", "-m", "ignore receipts");
+    git(repository, "merge", "--ff-only", "topic");
+    mkdirSync(join(worktree, "receipts"), { recursive: true });
+    writeFileSync(join(worktree, "receipts", "gate.json"), "{}\n");
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+
+    // Clean and contained — the old criterion would have removed it and taken
+    // receipts/gate.json with it, held by nothing.
+    expect(survey.proposals[0]?.clean).toBe(true);
+    expect(survey.proposals[0]?.action).toBe("inspect");
+    expect(survey.proposals[0]?.reason).toContain("ignored content no branch retains");
+    expect(survey.proposals[0]?.ignored_unrecognized).toContain("receipts/");
+    expect(survey.counts.downgraded_by_ignored_content).toBe(1);
+  });
+
+  test("a build tree does not block removal, and is still reported", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    writeFileSync(join(worktree, ".gitignore"), "node_modules/\n");
+    git(worktree, "add", ".gitignore");
+    git(worktree, "commit", "-m", "ignore deps");
+    git(repository, "merge", "--ff-only", "topic");
+    mkdirSync(join(worktree, "node_modules"), { recursive: true });
+    writeFileSync(join(worktree, "node_modules", "x.js"), "//\n");
+
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+
+    expect(survey.proposals[0]?.action).toBe("remove_worktree");
+    expect(survey.proposals[0]?.ignored_paths).toContain("node_modules/");
+    expect(survey.proposals[0]?.ignored_unrecognized).toEqual([]);
+    expect(survey.counts.downgraded_by_ignored_content).toBe(0);
+  });
+
+  test("rebuildable matching reads the last segment, never any segment", () => {
+    expect(isRebuildableIgnored("node_modules/")).toBe(true);
+    expect(isRebuildableIgnored("packages/app/node_modules/")).toBe(true);
+    expect(isRebuildableIgnored("debug.log")).toBe(true);
+    // The distinction that decides whether work is lost: a receipt living
+    // under a directory called build is not a build artefact.
+    expect(isRebuildableIgnored("evidence/build/receipt.json")).toBe(false);
+    // Git does not always collapse an ignored directory: a .pytest_cache that
+    // carries its own .gitignore is reported file by file, and those files
+    // must not be judged on their own names.
+    expect(isRebuildableIgnored(".pytest_cache/README.md")).toBe(true);
+    expect(isRebuildableIgnored(".pytest_cache/CACHEDIR.TAG")).toBe(true);
+    expect(isRebuildableIgnored("node_modules/pkg/LICENSE")).toBe(true);
+    // ...but a generic name never claims its descendants.
+    expect(isRebuildableIgnored("dist/")).toBe(true);
+    expect(isRebuildableIgnored("dist/receipts/gate.json")).toBe(false);
+    expect(isRebuildableIgnored("receipts/")).toBe(false);
+    expect(isRebuildableIgnored("gate-cache/ledger.db")).toBe(false);
+  });
+
+  test("a state digest changes when the worktree changes and is stable when it does not", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    const options = {
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    };
+
+    const first = surveyWorktrees(options).proposals[0]?.state_digest;
+    expect(first).toBeTruthy();
+    // Re-surveying an untouched worktree must reproduce it, or an executor
+    // could never distinguish "nothing moved" from "something did".
+    expect(surveyWorktrees(options).proposals[0]?.state_digest).toBe(first);
+
+    writeFileSync(join(worktree, "scratch.txt"), "written by someone else\n");
+    expect(surveyWorktrees(options).proposals[0]?.state_digest).not.toBe(first);
   });
 
   test("proposes catch-up AND removal when every commit the branch carries is already upstream", () => {
