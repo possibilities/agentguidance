@@ -1,7 +1,18 @@
 #!/usr/bin/env bun
 
-import { existsSync, readdirSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
-import { homedir } from "node:os";
+import {
+	existsSync,
+	readFileSync,
+	readdirSync,
+	realpathSync,
+	renameSync,
+	statSync,
+	unlinkSync,
+	watch,
+	writeFileSync,
+	type FSWatcher,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
@@ -198,6 +209,9 @@ interface WatchOptions extends SurveyOptions {
   sweepIntervalSeconds: number;
   once: boolean;
   wakeSelf: boolean;
+  /** Refuse to exit 0 unless every proposal in this survey carries this action.
+   * A gate for a caller about to act on one worktree. */
+  assertAction?: string;
 }
 
 /** How long a worktree must sit untouched before a lifecycle proposal on it is
@@ -938,11 +952,40 @@ function declaredPrefix(repository: string, key: string): string | null {
   return value === null || value === "" ? null : value;
 }
 
+function localBranchExists(repository: string, branch: string): boolean {
+  return git(repository, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).code === 0;
+}
+
+/** The trunk of a repository that declares no fork model. This used to be the
+ * literal `main`, which made every `master`-based repository unassessable: tend
+ * reported "no local main branch" as an issue and surveyed none of its
+ * worktrees, so a forgotten worktree in one was never proposed at all. Four
+ * repositories on this machine are that shape.
+ *
+ * `main` still wins wherever it exists, so nothing about a `main`-based
+ * repository changes; the fallback only speaks when there is no `main` to find.
+ * It then believes the repository's own declaration of its default — the
+ * `origin/HEAD` symbolic ref — and only guesses `master` when even that is
+ * absent. The guess is deliberately last: a name Git itself reports beats a
+ * convention, and both beat assuming the repository is broken. */
+export function defaultTrunk(repository: string): string {
+  if (localBranchExists(repository, "main")) return "main";
+  const head = git(repository, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  if (head.code === 0) {
+    const named = head.stdout.trim().replace(/^origin\//, "");
+    if (named && localBranchExists(repository, named)) return named;
+  }
+  if (localBranchExists(repository, "master")) return "master";
+  // Nothing to judge against. Kept as `main` so the caller still reports the
+  // repository as unassessable rather than inventing a trunk.
+  return "main";
+}
+
 export function resolveModel(repository: string): RepositoryModel {
   const trunk = configuredValue(repository, "supervisor.trunk") ?? "";
   if (!trunk) {
     return {
-      trunk: "main",
+      trunk: defaultTrunk(repository),
       mirror: null,
       carry_prefixes: [],
       carry_refs: [],
@@ -1108,7 +1151,7 @@ export function surveyWorktrees(
         worktree: null,
         reason: model.fork
           ? `repository declares ${model.trunk} as its trunk but has no such local branch`
-          : "repository has no local main branch",
+          : "repository has no local main or master branch, and no origin/HEAD naming one",
       });
       continue;
     }
@@ -1300,10 +1343,150 @@ function ownSession(agents: readonly JsonObject[]): string | null {
   return row ? sessionId(row) : null;
 }
 
-export function wakeMessage(survey: TendSurvey): string {
+/** Session slugs outlive the process that learned them.
+ *
+ * The store used to be per-watcher and in memory only, which had two
+ * consequences that showed up together. A watcher restart forgot every identity
+ * it had accumulated; and `--once` — the mode the skill tells you to re-run
+ * before writing a minisketch — had no store at all. Since a worktree with a
+ * live agent is protected and never becomes a proposal, a proposal's slug can
+ * only ever come from a remembered one, so `session_slug` was structurally
+ * always null in snapshot mode and every bullet read "an older unattributed
+ * session".
+ *
+ * The file sits beside the wake surveys rather than in any repository. The
+ * constraint this code has always honoured is that tend writes no repository or
+ * worktree metadata, and a temp file is neither. */
+function sessionSlugStorePath(): string {
+  return join(tmpdir(), "tend-session-slugs.json");
+}
+
+export function loadSessionSlugs(
+  path: string = sessionSlugStorePath(),
+): Record<string, string> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    // Absent, unreadable or truncated all mean the same thing to a caller:
+    // nothing is remembered. Never let a bad store break a survey.
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const remembered: Record<string, string> = {};
+  for (const [directory, slug] of Object.entries(parsed as Record<string, unknown>)) {
+    // A remembered directory that no longer exists belonged to a worktree that
+    // has since been removed. Dropping it on load is what bounds the store.
+    if (typeof slug === "string" && slug !== "" && existsSync(directory)) {
+      remembered[directory] = slug;
+    }
+  }
+  return remembered;
+}
+
+export function saveSessionSlugs(
+  remembered: Readonly<Record<string, string>>,
+  path: string = sessionSlugStorePath(),
+): void {
+  // Written through a temp file and renamed: several watchers may run at once,
+  // and a half-written store must never be readable as an empty one.
+  const staging = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(staging, `${JSON.stringify(remembered, null, 2)}\n`, "utf8");
+    renameSync(staging, path);
+  } catch {
+    try {
+      unlinkSync(staging);
+    } catch {
+      // Nothing to clean up.
+    }
+  }
+}
+
+/** How many of this watcher's survey files to leave in place. A wake the agent
+ * has not read yet is still worth having, so this keeps more than one; an
+ * unbounded pile in the temp directory is not. */
+const WAKE_SURVEY_KEEP = 5;
+
+/** The survey travels as a file rather than inline. A wake used to carry the
+ * whole tend_survey JSON in the message body, which is tens of kilobytes on a
+ * machine with dozens of worktrees — enough to bury the human's own
+ * conversation in payload every time the picture changed. The path costs one
+ * line and the reader fetches the rest only when it matters. */
+export function writeWakeSurvey(survey: TendSurvey, now: number = Date.now()): string {
+  const directory = tmpdir();
+  const path = join(directory, `tend-survey-${process.pid}-${now}.json`);
+  writeFileSync(path, `${JSON.stringify(survey, null, 2)}\n`, "utf8");
+  pruneWakeSurveys(directory);
+  return path;
+}
+
+function pruneWakeSurveys(directory: string): void {
+  const prefix = `tend-survey-${process.pid}-`;
+  let names: string[];
+  try {
+    names = readdirSync(directory).filter(
+      (name) => name.startsWith(prefix) && name.endsWith(".json"),
+    );
+  } catch {
+    return;
+  }
+  // Fixed-width millisecond stamps, so lexical order is chronological order.
+  names.sort();
+  for (const name of names.slice(0, Math.max(0, names.length - WAKE_SURVEY_KEEP))) {
+    try {
+      unlinkSync(join(directory, name));
+    } catch {
+      // A reader may still hold it, or another sweep may have won the race.
+    }
+  }
+}
+
+/** The exit status of a gated snapshot.
+ *
+ * This exists because a hand-rolled gate is where tend runs go wrong. A script
+ * that recomputes "is it clean, is it contained" itself will, sooner or later,
+ * print a condition it does not enforce and act anyway — that has happened,
+ * destroying ignored content the survey had already flagged. The survey has
+ * already made the judgement, including every downgrade; the caller's job is to
+ * obey it, not to re-derive it.
+ *
+ * A survey with no proposal fails too. A caller gating a removal must never read
+ * "nothing proposed" as "nothing to worry about": a targeted path that is
+ * missing, outside a repository, or no longer a candidate produces no proposal,
+ * and acting on that silence is exactly the mistake. */
+export function assertActionExit(expected: string | undefined, survey: TendSurvey): number {
+  if (!expected) return 0;
+  if (survey.issues.length > 0) {
+    for (const issue of survey.issues) {
+      process.stderr.write(`tend: cannot gate, ${issue.repository} could not be assessed: ${issue.reason}\n`);
+    }
+    return 2;
+  }
+  if (survey.proposals.length === 0) {
+    process.stderr.write(
+      "tend: cannot gate, the survey proposed nothing for the targeted worktrees; " +
+        "an absent proposal is not permission to act\n",
+    );
+    return 3;
+  }
+  let refused = 0;
+  for (const proposal of survey.proposals) {
+    if (proposal.action === expected) continue;
+    refused += 1;
+    const downgrade = proposal.downgrade ? ` (downgraded by ${proposal.downgrade})` : "";
+    process.stderr.write(
+      `tend: refusing ${expected} on ${proposal.worktree}: the survey proposes ` +
+        `${proposal.action}${downgrade} — ${proposal.reason}\n`,
+    );
+  }
+  return refused > 0 ? 1 : 0;
+}
+
+export function wakeMessage(survey: TendSurvey, surveyPath: string): string {
   return [
-    `<tend_event>${JSON.stringify(survey)}</tend_event>`,
-    "Automated Tend wake — re-run the read-only snapshot, notify if it still has proposals, and return the /tend minisketch. Lead with each event proposal's session_slug when the matching refreshed worktree and HEAD are unchanged; the live agent row may already be gone. Do not perform any proposed action.",
+    `<tend_event survey_file="${surveyPath}" proposals="${survey.proposals.length}" ownership_available="${survey.ownership_available}" />`,
+    `Automated Tend wake — the complete tend_survey JSON is in the file named above; read it from there rather than expecting it inline. Re-run the read-only snapshot, notify if it still has proposals, and return the /tend minisketch. Lead with each event proposal's session_slug when the matching refreshed worktree and HEAD are unchanged; the live agent row may already be gone. Do not perform any proposed action.`,
   ].join("\n");
 }
 
@@ -1313,7 +1496,11 @@ function wakeSelf(survey: TendSurvey, ownership: AgentSnapshot): void {
     process.stderr.write("tend watch: cannot self-wake; this Herdr pane has no agent session\n");
     return;
   }
-  const result = run("agentsurface", ["message", target, wakeMessage(survey)]);
+  const result = run("agentsurface", [
+    "message",
+    target,
+    wakeMessage(survey, writeWakeSurvey(survey)),
+  ]);
   if (result.code !== 0) {
     process.stderr.write(
       `tend watch: self-wake failed: ${result.stderr.trim() || `exit ${result.code}`}\n`,
@@ -1464,12 +1651,13 @@ function parseOptions(argv: string[]): WatchOptions {
       worktree: { type: "string", multiple: true },
       once: { type: "boolean", default: false },
       "wake-self": { type: "boolean", default: false },
+      "assert-action": { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
     strict: true,
   });
   if (parsed.values.help) {
-    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH]... (default: $HOME) [--socket PATH] [--sweep-interval SECONDS]\n+                [--activity-window SECONDS]\n+                [--worktree PATH]...\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits.\n`);
+    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH]... (default: $HOME) [--socket PATH] [--sweep-interval SECONDS]\n+                [--activity-window SECONDS]\n+                [--worktree PATH]...\n+                [--assert-action ACTION]\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits. With --assert-action, --once exits\n+non-zero unless every proposal carries that action, so a caller can gate an\n+operation on the survey rather than on its own re-derived checks.\n`);
     process.exit(0);
   }
   return {
@@ -1487,6 +1675,7 @@ function parseOptions(argv: string[]): WatchOptions {
     worktrees: (parsed.values.worktree ?? []).map(normalize),
     once: parsed.values.once ?? false,
     wakeSelf: parsed.values["wake-self"] ?? false,
+    assertAction: parsed.values["assert-action"],
   };
 }
 
@@ -1498,12 +1687,16 @@ if (import.meta.main) {
   }
 
   if (options.once) {
-    process.stdout.write(`${JSON.stringify(surveyWorktrees(options, "snapshot"))}\n`);
-    process.exit(0);
+    const survey = surveyWorktrees(
+      { ...options, sessionSlugs: loadSessionSlugs() },
+      "snapshot",
+    );
+    process.stdout.write(`${JSON.stringify(survey)}\n`);
+    process.exit(assertActionExit(options.assertAction, survey));
   }
 
   let lastFingerprint = "";
-  const rememberedSessionSlugs: Record<string, string> = {};
+  const rememberedSessionSlugs: Record<string, string> = loadSessionSlugs();
   let debounce: ReturnType<typeof setTimeout> | null = null;
   const gitWatches = new GitWatchSet();
   let publish: (occasion: TendSurvey["occasion"], wake: boolean) => void;
@@ -1518,6 +1711,7 @@ if (import.meta.main) {
   publish = (occasion: TendSurvey["occasion"], shouldWake: boolean) => {
     const ownership = queryAgents(options.herdrBin);
     rememberSessionSlugs(rememberedSessionSlugs, ownership.agents);
+    saveSessionSlugs(rememberedSessionSlugs);
     const survey = surveyWorktrees({
       ...options,
       ownership,

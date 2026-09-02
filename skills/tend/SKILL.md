@@ -7,8 +7,10 @@ disable-model-invocation: true
 # Tend worktrees
 
 Keep inactive agent worktrees from becoming forgotten directories or stale
-branches. Tend observes and proposes. It never rebases, removes a worktree,
-deletes a branch, merges, pushes, or edits a file.
+branches. Tend surveys, proposes, and then works the list down with the human
+one item at a time, until there is nothing left to tend. The survey itself is
+read-only, and nothing rebases, removes a worktree, deletes a branch, merges,
+pushes, or edits a file until the human says to do that specific item.
 
 `maintain` reconciles a carried fork. Tend is the lighter advisory loop around
 ordinary worktrees whose agents have left; integration and publication remain
@@ -27,8 +29,14 @@ The one JSON object is the current `tend_survey`. Git answers which linked
 worktrees exist and how each branch relates to its repository's declared
 trunk; Herdr answers whether any agent is still in one. Each proposal's
 `session_slug` is Herdr's generated conversation name from
-`tokens.conversation`, retained by the long-running watcher after that agent
-exits. Treat `ownership_available: false` as a failed safety check, never as an
+`tokens.conversation`, retained after that agent exits. The retention is durable
+and shared: slugs are kept in a temp-directory store, so they survive a watcher
+restart and `--once` can read them too. That matters more than it sounds,
+because a worktree with a live agent is protected and never becomes a proposal —
+a proposal's slug can therefore only ever be a remembered one, and before the
+store existed `session_slug` was structurally always null in snapshot mode and
+every bullet read "an older unattributed session". A worktree Herdr never
+managed still has no slug, and never will. Treat `ownership_available: false` as a failed safety check, never as an
 empty agent list.
 
 Every agent row whose `cwd` or `foreground_cwd` is the worktree or lies inside
@@ -157,7 +165,13 @@ worktree, and is offered the catch-up alone.
 
 Each proposal carries the `trunk` it was judged against and `fork_model`,
 which says whether that trunk came from a declared fork model or from the
-ordinary `main` default.
+repository's own default. That default is `main` wherever a local `main`
+exists; failing that it is whatever `origin/HEAD` names, and failing that
+`master`. The order matters: a name Git itself reports beats a convention, and
+both beat assuming the repository is broken. Before this fallback existed a
+`master`-based repository was reported as unassessable and none of its
+worktrees were surveyed at all, so a forgotten worktree in one was never
+proposed.
 
 ## Repositories that carry a fork
 
@@ -238,9 +252,41 @@ a fork repository was judged against rather than implying `main`, and say
 plainly when ownership was unavailable or a repository could not be assessed.
 Do not inflate an empty survey into a report: say there is nothing to tend.
 
-This first version ends at the minisketch. A later explicit request to carry
-out one of its bullets is new work under the session's ordinary approval and
-safety guidance, not authority inherited from `/tend`.
+The minisketch is the overview, not the end: it is where the wizard below
+starts. Carrying out any single bullet is ordinary work under the session's
+own approval and safety guidance, never authority inherited from `/tend`.
+
+## Work the list with the human
+
+Having shown the categorized overview, work it down one item at a time. The
+goal of a run is a fully tended machine, reached collaboratively — not a report
+the human is left holding.
+
+Present one proposal: what it is, the evidence that decides it, and a concrete
+recommendation. Then wait. The human answers for that item alone — do it, do
+part of it, skip it for now, or rule on it permanently. Never batch several
+items into one question, and never carry an approval from one item to the next.
+Each worktree is its own decision, and the one thing an approval never grants
+is authority over the item after it.
+
+Order the list so the cheap certainties come first: removals, then catch-ups,
+then the inspects that need a human eye. The list visibly shortens, and the
+ambiguous cases get attention when fewer of them are left.
+
+Re-gate each item immediately before presenting it, not once at the start. A
+survey is a snapshot, and the item about to be described may have moved while
+the previous one was being resolved — say what changed rather than presenting
+stale evidence. This matters most right after a catch-up, whose own writes land
+inside the activity window and will downgrade the next proposals in the list;
+that is tend seeing itself, and it is not evidence of another owner.
+
+Keep going until every proposal is either done or explicitly parked. Then close
+the run by saying what remains and why: parked items with their reasons,
+repositories that could not be assessed, and anything a downgrade held back. A
+run that ends with items neither done nor parked has not finished tending.
+
+A human who stops answering ends the loop. Do not proceed through the remainder
+on the strength of earlier approvals.
 
 ## Before acting on a proposal
 
@@ -294,6 +340,38 @@ trusting a name, and audit ignored content before deleting anything, since a
 `remove_worktree` proposal has not established that nothing unrecoverable is
 there beyond the reproducible-artefact rule above.
 
+**Enforce every check you print, and prefer the helper's verdict to your own
+re-derivation.** A gate that computes a condition, reports it, and then removes
+anyway is worse than no gate: it produces a transcript that looks careful and an
+action that was not. This has happened twice in one session — once printing a
+worktree's ignored content and removing it regardless, destroying a vendored
+dependency the survey had already flagged as unrecognized; once printing
+`contained in main: NO` and removing on the strength of a different argument
+made earlier. Both were recoverable by luck rather than by design.
+
+The specific correction: do not hand-roll the gate. The survey already decided,
+and its `action` and `downgrade` fields carry that decision — a proposal reduced
+to `inspect` by ignored content or a process is not a removal you may perform
+because your own checks came back clean.
+
+`--assert-action` makes that mechanical rather than advisory:
+
+```sh
+bun scripts/watch.ts --once --worktree PATH --assert-action remove_worktree \
+  || exit 1
+```
+
+It exits non-zero unless every proposal in that survey carries the named action,
+naming what the survey proposes instead and which downgrade produced it. It also
+fails when the survey proposed *nothing*, because a targeted path that is
+missing, outside a repository, or no longer a candidate yields no proposal, and
+a caller must never read that silence as permission. Gate on this rather than on
+your own recomputation, and where a genuine argument overrides the helper's
+verdict, say so out loud before acting rather than letting an unenforced line
+scroll past. Commit-level containment is also the wrong question after a
+fast-forward: a sibling commit adding identical content reads as uncontained
+while losing nothing, so decide on trees and blobs, and say which you used.
+
 **Back a catch-up out, do not push through it.** Record each branch head under
 `refs/tend-backup/<timestamp>/` and verify the ref resolves before rebasing;
 abort on any non-zero exit and assert HEAD returned to the recorded head with
@@ -311,6 +389,36 @@ What answers the question is per-commit patch-id against
 `git log -p --no-merges <merge-base>..<trunk>`, falling back to
 `git log -S<distinctive string> <trunk>` when a patch-id misses because context
 shifted. Check the check before reporting loss.
+
+**A catch-up that conflicts on its first replay is usually a reworked landing,
+not a divergence.** Git's already-upstream filter matches patch-ids, so work
+that reached trunk by recomposition — squashed, rebased, or replayed into a
+file trunk has since moved — reads as unlanded and gets a plain
+`catch_up_to_trunk`. The rebase then replays a change whose destination already
+changed, and stops. The tell is several branches in one repository conflicting
+on the same file and the same commit subject, and diffstats on the branch and
+trunk copies that match exactly while their patch-ids differ.
+
+Establish that per commit rather than assuming it from the pattern. For each
+commit the rebase would replay, look for a commit on trunk carrying the same
+subject; where one exists, confirm the content actually arrived — by patch-id
+where it matches, otherwise by `git log -S<distinctive string> <trunk>`, which
+finds a string that entered trunk's history even after later edits moved it.
+Do not test an intermediate commit's added lines against trunk's current tree:
+a line the branch itself later revised is legitimately absent there, and reads
+as loss when it is not. Where no trunk commit carries the subject and no
+distinctive string is found, that commit is genuine unlanded work — stop and
+hand it back rather than skipping it.
+
+`git rebase --skip` is then the resolution for each confirmed-landed commit,
+and the branch ends sitting on trunk, which is the `catch_up_and_remove` state
+arrived at the long way. Two cautions on reading that result. The final tree
+matching trunk's proves nothing by itself, because it follows automatically
+from having skipped every commit — the evidence that nothing was lost is the
+per-commit check above, run over every commit actually skipped, not the tree
+comparison. And a worktree is detached for the duration of a rebase, so a
+survey landing mid-run reports `branch: null` and `detached`; confirm
+attachment after the run rather than believing a snapshot taken during it.
 
 ## Keep watch
 
@@ -338,8 +446,13 @@ under an unchanged `inspect` is a real change and must still wake, while a
 helper respawning under a new pid must not.
 
 `--wake-self` addresses this pane's current agent session through AgentSurface,
-so the same path works for Claude and Codex. The wake contains the complete
-survey JSON. On a wake, run `bun scripts/watch.ts --once` again before
+so the same path works for Claude and Codex. The wake does not carry the survey
+inline: it writes the complete JSON to a file under the temp directory and the
+message names that path, because a survey of a machine with dozens of worktrees
+runs to tens of kilobytes and pasting that into the conversation on every
+change buries the human's own work in payload. Read the named file when the
+summary line says something worth reading; the watcher keeps the last few and
+prunes the rest. On a wake, run `bun scripts/watch.ts --once` again before
 notifying or writing the minisketch: an event is a reason to look, not a lease
 on state that may already have changed. When an event proposal's worktree and
 HEAD still match the refreshed proposal, preserve its `session_slug`; the

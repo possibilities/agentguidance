@@ -39,4 +39,7 @@ That shape is declared once, in the workshop's
 
 The config is derived state, never a second declaration: converge it rather
 than editing those keys by hand, and treat a repository that answers no
-`supervisor.trunk` as an ordinary `main`-based one.
+`supervisor.trunk` as an ordinary one judged against its own default branch.
+Setting `supervisor.trunk` by hand to make a `master`-based repository legible
+is exactly the second declaration this forbids; the default already resolves
+`main`, then `origin/HEAD`, then `master`.

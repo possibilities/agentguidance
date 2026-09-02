@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -11,8 +19,13 @@ import {
   resolveModel,
   surveyFingerprint,
   surveyWorktrees,
+  defaultTrunk,
+  loadSessionSlugs,
+  saveSessionSlugs,
+  assertActionExit,
   shouldWakeSelf,
   wakeMessage,
+  writeWakeSurvey,
   queryProcessCwds,
   worktreeHasActiveAgent,
   type AgentSnapshot,
@@ -757,9 +770,130 @@ describe("Tend survey", () => {
 
     expect(shouldWakeSelf(false, first)).toBe(false);
     expect(shouldWakeSelf(true, first)).toBe(true);
-    expect(wakeMessage(first)).toContain(JSON.stringify(first));
-    expect(wakeMessage(first)).toContain("session_slug");
-    expect(wakeMessage(first)).toContain("Do not perform any proposed action");
+    // The survey travels as a file, not inline: a wake used to carry tens of
+    // kilobytes of JSON into the conversation every time the picture moved.
+    const surveyPath = writeWakeSurvey(first);
+    const message = wakeMessage(first, surveyPath);
+    expect(message).toContain(surveyPath);
+    expect(message).not.toContain(JSON.stringify(first));
+    expect(message.length).toBeLessThan(JSON.stringify(first).length);
+    expect(message).toContain("Do not perform any proposed action");
+    // And the reader can still get the whole thing back from that path.
+    expect(JSON.parse(readFileSync(surveyPath, "utf8"))).toEqual(first);
+    unlinkSync(surveyPath);
+  });
+
+  test("remembers session slugs across processes, and forgets removed worktrees", () => {
+    // The store used to be per-watcher and in memory, so a restart forgot every
+    // identity and `--once` had none at all — which made session_slug
+    // structurally always null in snapshot mode.
+    const { worktreeRoot } = fixture();
+    const store = join(mkdtempSync(join(tmpdir(), "tend-slugs-")), "slugs.json");
+    temporary.push(store);
+
+    expect(loadSessionSlugs(store)).toEqual({});
+
+    const live = join(worktreeRoot, "still-here");
+    mkdirSync(live, { recursive: true });
+    const gone = join(worktreeRoot, "already-removed");
+    saveSessionSlugs({ [live]: "porting-transcripts", [gone]: "long-finished" }, store);
+
+    const loaded = loadSessionSlugs(store);
+    expect(loaded[live]).toBe("porting-transcripts");
+    // A directory that no longer exists named a worktree that has been removed.
+    // Dropping it on load is what bounds the store.
+    expect(loaded[gone]).toBeUndefined();
+
+    // A corrupt or truncated store means "nothing remembered", never a crash.
+    writeFileSync(store, "{not json");
+    expect(loadSessionSlugs(store)).toEqual({});
+    writeFileSync(store, '["an","array"]');
+    expect(loadSessionSlugs(store)).toEqual({});
+    expect(loadSessionSlugs(join(worktreeRoot, "absent.json"))).toEqual({});
+  });
+
+  test("gates an operation on the survey instead of the caller's own checks", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot, "gated");
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+    const proposed = survey.proposals[0]!.action;
+
+    // No assertion requested: the gate is inert.
+    expect(assertActionExit(undefined, survey)).toBe(0);
+    // Asking for what the survey actually proposes passes.
+    expect(assertActionExit(proposed, survey)).toBe(0);
+    // Asking for anything else is refused, whatever the caller believes.
+    expect(assertActionExit("remove_worktree", {
+      ...survey,
+      proposals: survey.proposals.map((p) => ({ ...p, action: "inspect" as const })),
+    })).toBe(1);
+
+    // A survey that could not assess a repository cannot gate anything.
+    expect(assertActionExit(proposed, {
+      ...survey,
+      issues: [{ repository, worktree: null, reason: "unassessable" }],
+    })).toBe(2);
+
+    // And an absent proposal is not permission to act — the trap the skill
+    // warns about, where a missing or out-of-repository path yields nothing.
+    expect(assertActionExit(proposed, { ...survey, proposals: [] })).toBe(3);
+    expect(worktree).toContain(worktreeRoot);
+  });
+
+  test("judges a master-based repository instead of reporting it unassessable", () => {
+    // Four repositories on this machine default to master. Tend used to hardcode
+    // `main`, report "no local main branch", and survey none of their worktrees —
+    // so a forgotten worktree in one was never proposed at all.
+    const root = mkdtempSync(join(tmpdir(), "tend-master-"));
+    temporary.push(root);
+    const projects = join(root, "projects");
+    const repository = join(projects, "app");
+    const worktreeRoot = join(root, ".herdr", "worktrees");
+    run(root, "mkdir", ["-p", repository, worktreeRoot]);
+    git(repository, "init", "-b", "master");
+    git(repository, "config", "user.name", "Tend Test");
+    git(repository, "config", "user.email", "tend@example.test");
+    writeFileSync(join(repository, "file.txt"), "initial\n");
+    git(repository, "add", "file.txt");
+    git(repository, "commit", "-m", "initial");
+    git(repository, "branch", "topic");
+    const worktree = join(worktreeRoot, "worktree-topic");
+    git(repository, "worktree", "add", worktree, "topic");
+
+    expect(defaultTrunk(repository)).toBe("master");
+    const survey = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+    expect(survey.issues).toEqual([]);
+    expect(survey.proposals).toHaveLength(1);
+    expect(survey.proposals[0]).toMatchObject({
+      trunk: "master",
+      action: "remove_worktree",
+      reason_code: "contained_removable",
+    });
+
+    // `main` still wins wherever it exists, so nothing about a main-based
+    // repository changes.
+    const plain = fixture();
+    expect(defaultTrunk(plain.repository)).toBe("main");
+
+    // And a repository with neither is still reported rather than invented.
+    const bare = mkdtempSync(join(tmpdir(), "tend-neither-"));
+    temporary.push(bare);
+    const orphan = join(bare, "projects", "app");
+    run(bare, "mkdir", ["-p", orphan]);
+    git(orphan, "init", "-b", "trunkless");
+    expect(defaultTrunk(orphan)).toBe("main");
   });
 
   test("codes the judgement separately from the prose that reports it", () => {
