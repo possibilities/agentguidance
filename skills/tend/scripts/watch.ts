@@ -149,6 +149,10 @@ export interface SurveyOptions {
   /** Seconds of quiet a worktree must show before a lifecycle proposal on it
    * is actionable. 0 disables the check. */
   activityWindowSeconds?: number;
+  /** Evaluate only these worktrees, resolving each one's repository directly
+   * instead of walking the project roots. The judgement is identical; this
+   * only narrows what is judged, for a caller gating one known path. */
+  worktrees?: readonly string[];
 }
 
 interface WatchOptions extends SurveyOptions {
@@ -920,11 +924,54 @@ function heldByModel(branch: string, model: RepositoryModel): string | null {
   return null;
 }
 
+/** The repositories owning a set of worktree paths, deduped by common dir. A
+ * path that is not a checkout is reported rather than dropped: a caller gating
+ * a removal on the result must not read "no proposal" as "nothing to worry
+ * about", so the survey has to say why it produced none. */
+export function repositoriesForWorktrees(paths: readonly string[]): RepositoryDiscovery {
+  const repositories: string[] = [];
+  const issues: TendIssue[] = [];
+  const seen = new Set<string>();
+  for (const path of paths) {
+    if (!existsSync(path)) {
+      issues.push({ repository: null, worktree: path, reason: "no such path" });
+      continue;
+    }
+    const common = resolveCommonDir(path);
+    if (common === null) {
+      issues.push({ repository: null, worktree: path, reason: "not inside a Git repository" });
+      continue;
+    }
+    if (!isCheckoutRoot(path)) {
+      issues.push({
+        repository: null,
+        worktree: path,
+        reason: "not a worktree root: it lies inside a checkout rather than being one",
+      });
+      continue;
+    }
+    // The common dir is <main>/.git for a normal checkout and the same for
+    // every linked worktree of it, which is exactly the dedupe key wanted.
+    const main = common.endsWith("/.git") ? common.slice(0, -"/.git".length) : common;
+    if (seen.has(main)) continue;
+    seen.add(main);
+    repositories.push(main);
+  }
+  return { repositories, issues };
+}
+
 export function surveyWorktrees(
   options: SurveyOptions,
   occasion: TendSurvey["occasion"] = "snapshot",
 ): TendSurvey {
-  const discovered = findRepositories(options.projectRoots);
+  // Gating one known path should not cost a survey of the machine. The
+  // dominant per-worktree cost is the already-upstream check, which must
+  // patch-id the whole upstream side, so the only real saving is to judge
+  // fewer worktrees — not to judge them more cheaply.
+  const targeted = (options.worktrees ?? []).map(normalize);
+  const discovered = targeted.length > 0
+    ? repositoriesForWorktrees(targeted)
+    : findRepositories(options.projectRoots);
   const repositories = discovered.repositories;
   const ownership = options.ownership ?? queryAgents(options.herdrBin);
   const processes = options.processes ?? queryProcessCwds();
@@ -962,6 +1009,7 @@ export function surveyWorktrees(
       // excluded only as a side effect of the Herdr-root filter, so it has to
       // be excluded on its own now that worktrees anywhere are considered.
       if (normalize(record.path) === normalize(repository)) return false;
+      if (targeted.length > 0 && !targeted.includes(normalize(record.path))) return false;
       return options.worktreeRoots.length === 0 ||
         options.worktreeRoots.some((root) => pathIsWithin(record.path, root));
     });
@@ -1302,6 +1350,7 @@ function parseOptions(argv: string[]): WatchOptions {
       socket: { type: "string" },
       "sweep-interval": { type: "string" },
       "activity-window": { type: "string" },
+      worktree: { type: "string", multiple: true },
       once: { type: "boolean", default: false },
       "wake-self": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
@@ -1309,7 +1358,7 @@ function parseOptions(argv: string[]): WatchOptions {
     strict: true,
   });
   if (parsed.values.help) {
-    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH]... [--socket PATH] [--sweep-interval SECONDS]\n+                [--activity-window SECONDS]\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits.\n`);
+    process.stdout.write(`Usage: watch.ts [--once] [--wake-self] [--project-root PATH]...\n+                [--worktree-root PATH]... [--socket PATH] [--sweep-interval SECONDS]\n+                [--activity-window SECONDS]\n+                [--worktree PATH]...\n+\n+Emits read-only tend_survey JSON records. The long-running mode watches Git and\n+Herdr, while --once prints one snapshot and exits.\n`);
     process.exit(0);
   }
   return {
@@ -1318,6 +1367,7 @@ function parseOptions(argv: string[]): WatchOptions {
     socketPath: normalize(parsed.values.socket ?? defaultSocketPath()),
     sweepIntervalSeconds: parseSeconds(parsed.values["sweep-interval"]),
     activityWindowSeconds: parseActivityWindow(parsed.values["activity-window"]),
+    worktrees: (parsed.values.worktree ?? []).map(normalize),
     once: parsed.values.once ?? false,
     wakeSelf: parsed.values["wake-self"] ?? false,
   };

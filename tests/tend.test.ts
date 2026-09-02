@@ -118,6 +118,68 @@ describe("Tend survey", () => {
     expect(git(repository, "worktree", "list", "--porcelain")).toBe(worktreesBefore);
   });
 
+  test("evaluates one named worktree without walking the project roots", () => {
+    const { projects, repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    const other = addWorktree(repository, worktreeRoot, "second");
+
+    // No projectRoots at all: the repository is resolved from the path.
+    const survey = surveyWorktrees({
+      projectRoots: [],
+      worktreeRoots: [],
+      worktrees: [worktree],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+
+    expect(survey.proposals).toHaveLength(1);
+    expect(survey.proposals[0]?.worktree).toBe(worktree);
+    expect(survey.proposals[0]?.action).toBe("remove_worktree");
+    expect(survey.proposals.some((p) => p.worktree === other)).toBe(false);
+    // Identical judgement to the full walk, not a cheaper approximation.
+    const full = surveyWorktrees({
+      projectRoots: [projects],
+      worktreeRoots: [worktreeRoot],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+    const same = full.proposals.find((p) => p.worktree === worktree);
+    expect(survey.proposals[0]?.action).toBe(same?.action);
+    expect(survey.proposals[0]?.state_digest).toBe(same?.state_digest);
+  });
+
+  test("a targeted path that is not a worktree root is reported, never silently empty", () => {
+    const { repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    mkdirSync(join(worktree, "inside"), { recursive: true });
+
+    const survey = surveyWorktrees({
+      projectRoots: [],
+      worktreeRoots: [],
+      worktrees: [join(worktree, "inside")],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+
+    // A gate reading "no proposal" as "safe to delete" must not be able to get
+    // here by pointing at the wrong path.
+    expect(survey.proposals).toHaveLength(0);
+    expect(survey.issues.some((i) => i.reason.includes("not a worktree root"))).toBe(true);
+
+    const missing = surveyWorktrees({
+      projectRoots: [],
+      worktreeRoots: [],
+      worktrees: [join(worktreeRoot, "does-not-exist")],
+      activityWindowSeconds: 0,
+      ownership: noAgents,
+      processes: noProcesses,
+    });
+    expect(missing.issues.some((i) => i.reason === "no such path")).toBe(true);
+  });
+
   test("refuses to remove a worktree holding ignored content no branch retains", () => {
     const { projects, repository, worktreeRoot } = fixture();
     const worktree = addWorktree(repository, worktreeRoot);

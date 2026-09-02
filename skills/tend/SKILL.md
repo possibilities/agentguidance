@@ -236,6 +236,18 @@ bullets to be carried out, it becomes ordinary work under the session's own
 approval and safety guidance — and that is where this session's hazards live,
 so they are named here rather than left to be rediscovered.
 
+**Gate one path without surveying the machine.** `--worktree PATH`
+(repeatable) resolves each path's repository directly and judges only those
+worktrees, producing the identical proposal the full walk would. It exists
+because the dominant per-worktree cost is the already-upstream check, which
+must patch-id the whole upstream side — roughly 0.8s against a branch hundreds
+of commits behind, against 0.03s for everything else put together. That cost
+cannot be made cheap without weakening the answer, so the saving is to judge
+fewer worktrees rather than to judge them worse. A targeted path that is
+missing, outside a repository, or inside a checkout rather than being one is
+reported as an issue instead of yielding nothing: a caller gating a removal
+must never read "no proposal" as "nothing to worry about".
+
 **A survey is a snapshot, not a lease.** Worktrees on this machine have been
 observed flipping between clean and dirty within minutes, so a proposal
 minutes old may already be wrong. Every proposal therefore carries
