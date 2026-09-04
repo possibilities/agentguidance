@@ -60,6 +60,13 @@ git -C "$seed" commit --quiet -am future-upstream
 future_upstream_sha=$(git -C "$seed" rev-parse HEAD)
 git -C "$seed" switch --quiet --detach "$upstream_main_sha"
 
+git -C "$seed" switch --quiet -c future/topic
+printf 'future topic\n' >"$seed/future-topic"
+git -C "$seed" add future-topic
+git -C "$seed" commit --quiet -m future-topic
+future_topic_sha=$(git -C "$seed" rev-parse HEAD)
+git -C "$seed" switch --quiet --detach "$upstream_main_sha"
+
 git -C "$seed" switch --quiet -c carry/alpha
 printf 'carry\n' >"$seed/carry"
 git -C "$seed" add carry
@@ -104,9 +111,44 @@ git -C "$seed" push --quiet "$fork_repo" \
     "$quarantine_sha:refs/heads/DELETEME/already"
 git -C "$seed" push --quiet "$upstream_repo" \
     "$upstream_main_sha:refs/heads/main" \
-    "$future_upstream_sha:refs/fixtures/future-upstream"
+    "$future_upstream_sha:refs/fixtures/future-upstream" \
+    "$future_topic_sha:refs/fixtures/future-topic"
 git --git-dir="$fork_repo" symbolic-ref HEAD refs/heads/main
 git --git-dir="$upstream_repo" symbolic-ref HEAD refs/heads/main
+
+# One cycle captures Main before its only upstream fetch. If Main and a topic
+# advance before that fetch, asking for the captured object imports only that
+# commit and its ancestors: neither moving head, its object, nor a tracking ref
+# may enter the cycle.
+fetch_checkout="$test_root/exact-fetch-checkout"
+git init --quiet --initial-branch=integration "$fetch_checkout"
+git -C "$fetch_checkout" remote add upstream "$upstream_repo"
+captured_upstream_sha=$(
+    git -C "$fetch_checkout" ls-remote --exit-code --heads upstream \
+        refs/heads/main | awk 'NR == 1 { print $1 }'
+)
+[ "$captured_upstream_sha" = "$upstream_main_sha" ] \
+    || fail "exact-fetch fixture captured the wrong upstream Main"
+git --git-dir="$upstream_repo" update-ref refs/heads/main "$future_upstream_sha"
+git --git-dir="$upstream_repo" update-ref refs/heads/future/topic "$future_topic_sha"
+git -C "$fetch_checkout" fetch --quiet --no-tags upstream \
+    "$captured_upstream_sha" \
+    || fail "could not fetch the captured upstream object"
+[ "$(git -C "$fetch_checkout" rev-parse FETCH_HEAD)" = "$captured_upstream_sha" ] \
+    || fail "exact upstream fetch wrote a different FETCH_HEAD"
+git -C "$fetch_checkout" cat-file -e "$captured_upstream_sha^{commit}" \
+    || fail "exact upstream fetch omitted the captured commit"
+for excluded_sha in "$future_upstream_sha" "$future_topic_sha"; do
+    if git -C "$fetch_checkout" cat-file -e "$excluded_sha^{commit}" 2>/dev/null; then
+        fail "exact upstream fetch imported a later upstream object: $excluded_sha"
+    fi
+done
+if git -C "$fetch_checkout" for-each-ref --format='%(refname)' \
+    refs/remotes/upstream/ | grep -q .; then
+    fail "exact upstream fetch populated moving upstream tracking refs"
+fi
+git --git-dir="$upstream_repo" update-ref refs/heads/main "$upstream_main_sha"
+git --git-dir="$upstream_repo" update-ref -d refs/heads/future/topic
 
 git clone --quiet --origin fork --branch integration "$fork_repo" "$checkout"
 git -C "$checkout" remote add upstream "$upstream_repo"
@@ -301,6 +343,15 @@ assert_ref stale/topic "$stale_sha"
 assert_ref late/topic "$late_sha"
 assert_ref already "$quarantine_sha"
 assert_ref DELETEME/already "$quarantine_sha"
+for excluded_sha in "$future_upstream_sha" "$future_topic_sha"; do
+    if git -C "$checkout" cat-file -e "$excluded_sha^{commit}" 2>/dev/null; then
+        fail "branch reconciliation imported a later upstream object: $excluded_sha"
+    fi
+done
+if git -C "$checkout" rev-parse --verify --quiet \
+    refs/remotes/upstream/future/topic >/dev/null; then
+    fail "branch reconciliation imported a later upstream topic ref"
+fi
 expected_heads=$(printf '%s\n' \
     already \
     DELETEME/already \

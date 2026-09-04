@@ -26,6 +26,16 @@ fi
 # composition models) is proven against throwaway repositories.
 tests/branch-policy.sh
 
+# A maintenance cycle fetches only its preselected upstream object. A broad
+# upstream fetch would import a later Main or topic and defeat one-shot scope.
+# shellcheck disable=SC2016 # Match the literal documented shell variables.
+grep -F 'git -C "$checkout" fetch --no-tags upstream "$cycle_upstream_sha"' \
+    skills/maintain/SKILL.md >/dev/null \
+    || fail "maintain does not fetch the exact captured upstream object"
+if grep -Eq 'fetch --no-tags upstream[[:space:]]*$' skills/maintain/SKILL.md; then
+    fail "maintain still documents a broad moving upstream fetch"
+fi
+
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
 for skill in build collab email maintain notify tend; do

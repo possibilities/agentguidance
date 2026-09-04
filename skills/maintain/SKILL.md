@@ -74,10 +74,14 @@ These hold for every workshop, whatever its spec says:
   use that exact value as the publication lease. Never recompute it after a
   fetch or just before the push.
 - Capture the upstream mirror tip beside that lease and use it as the cycle's
-  immutable upstream target. Fetch upstream once, then never refetch, reselect,
+  immutable upstream target. Fetch exactly that object once, never a moving
+  upstream ref or the remote's configured refspec, then never refetch, reselect,
   rebase onto, gate against, or publish a later upstream tip during the same
   invocation. Upstream movement after capture belongs to the next maintenance
   invocation, even when it occurs before the current cycle gates or publishes.
+- The exact-object fetch is the upstream provenance boundary. Do not infer
+  provenance afterward from ambient remote-tracking refs or their reflogs: they
+  are mutable, incomplete evidence and may contain work outside this cycle.
 - Gate and publish an exact commit, never an ambient branch name.
 - The previously published integration tip and the consumer's binding stay
   intact until the new candidate has passed its gate; a failed rebase,
@@ -139,19 +143,25 @@ These hold for every workshop, whatever its spec says:
      grep -Eq '^[0-9a-f]{40}$' || exit 1
    ```
 
-3. Fetch both remotes once. Do not fetch upstream again during this invocation.
-   Reconcile the branch namespace before feature work, pinned to the captured
-   upstream target. Inspect the whole plan, then apply it, through the
-   workshop's entrypoint:
+3. Fetch the captured upstream object once, without fetching any moving
+   upstream ref or configured upstream refspec. Fetch the fork separately.
+   Do not fetch upstream again during this invocation. Reconcile the branch
+   namespace before feature work, pinned to the captured upstream target.
+   Inspect the whole plan, then apply it, through the workshop's entrypoint:
 
    ```sh
-   git -C "$checkout" fetch --no-tags upstream
+   git -C "$checkout" fetch --no-tags upstream "$cycle_upstream_sha"
    git -C "$checkout" fetch --no-tags fork
    MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
      scripts/reconcile-branches.sh --check
    MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
      scripts/reconcile-branches.sh --apply
    ```
+
+   The upstream fetch writes the captured object to `FETCH_HEAD`; it does not
+   update or populate upstream remote-tracking refs. Reconciliation materializes
+   only the pinned mirror commit locally and on the fork. A later upstream Main
+   or topic head must not enter the cycle through this fetch.
 
    Stop on any divergence, a missing or moved validated head, a carry outside
    integration, a lease failure, or an unexpected remote identity.
