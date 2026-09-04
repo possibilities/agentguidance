@@ -109,7 +109,7 @@ git --git-dir="$fork_repo" symbolic-ref HEAD refs/heads/main
 git --git-dir="$upstream_repo" symbolic-ref HEAD refs/heads/main
 
 git clone --quiet --origin fork --branch integration "$fork_repo" "$checkout"
-git -C "$checkout" remote add origin "$upstream_repo"
+git -C "$checkout" remote add upstream "$upstream_repo"
 git -C "$checkout" branch main "$old_main_sha"
 git -C "$checkout" branch carry/alpha "$carry_sha"
 printf 'pr/open\t%s\t123\n' "$pr_sha" >"$open_pr_heads"
@@ -185,8 +185,8 @@ if git -C "$checkout" cat-file -e "$late_sha^{commit}" 2>/dev/null; then
     fail "--check imported remote objects into the bound checkout"
 fi
 if git -C "$checkout" rev-parse --verify --quiet \
-    refs/remotes/origin/main >/dev/null; then
-    fail "--check created origin/main tracking state"
+    refs/remotes/upstream/main >/dev/null; then
+    fail "--check created upstream/main tracking state"
 fi
 printf '%s\n' "$check_output" \
     | grep -F "MAIN main $old_main_sha -> $upstream_main_sha" >/dev/null \
@@ -317,10 +317,10 @@ actual_heads=$(git --git-dir="$fork_repo" for-each-ref \
 
 [ "$(git -C "$checkout" rev-parse main)" = "$upstream_main_sha" ] \
     || fail "local main was not fast-forwarded"
-[ "$(git -C "$checkout" config branch.main.remote)" = origin ] \
-    || fail "local main does not pull from origin"
+[ "$(git -C "$checkout" config branch.main.remote)" = upstream ] \
+    || fail "local main does not pull from upstream"
 [ "$(git -C "$checkout" config branch.main.merge)" = refs/heads/main ] \
-    || fail "local main does not pull origin/main"
+    || fail "local main does not pull upstream/main"
 [ "$(git -C "$checkout" config branch.main.pushRemote)" = fork ] \
     || fail "local main does not push to fork"
 [ "$(git -C "$checkout" config branch.carry/alpha.remote)" = fork ] \
@@ -409,7 +409,7 @@ diverged_status=$?
 set -e
 [ "$diverged_status" -ne 0 ] || fail "accepted a diverged fork main"
 printf '%s\n' "$diverged_output" \
-    | grep -F 'fork/main has commits outside origin/main' >/dev/null \
+    | grep -F 'fork/main has commits outside upstream/main' >/dev/null \
     || fail "did not explain the diverged fork main"
 git --git-dir="$fork_repo" update-ref refs/heads/main "$upstream_main_sha"
 
@@ -420,7 +420,7 @@ linear_checkout="$test_root/linear-checkout"
 git clone --quiet --bare "$fork_repo" "$linear_fork"
 git --git-dir="$linear_fork" update-ref refs/heads/offer/fix "$pr_sha"
 git clone --quiet --origin fork --branch integration "$linear_fork" "$linear_checkout"
-git -C "$linear_checkout" remote add origin "$upstream_repo"
+git -C "$linear_checkout" remote add upstream "$upstream_repo"
 git -C "$linear_checkout" branch main "$upstream_main_sha"
 linear_output=$(
     MAINTAIN_ALLOW_LOCAL_REMOTES=1 \

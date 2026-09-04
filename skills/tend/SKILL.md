@@ -104,7 +104,7 @@ about the roster, not only about the worktrees.
 
 The helper considers every linked worktree its repositories register below the
 home directory, wherever under it that worktree lives: in `~/.herdr/worktrees`,
-in a fan-out under `~/worktrees`, beside the checkout in `~/src`. A worktree is
+in a fan-out under `~/worktrees`, beside the checkout in `~/source`. A worktree is
 a lifecycle candidate because Git registers it and no agent is in it, not
 because of which of those directories it sits in, and a directory Herdr never
 created still becomes a forgotten directory.

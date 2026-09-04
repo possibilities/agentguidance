@@ -2309,7 +2309,7 @@ function parseOptions(argv: string[]): WatchOptions {
     process.exit(0);
   }
   return {
-    projectRoots: (parsed.values["project-root"] ?? [join(homedir(), "code"), join(homedir(), "src")]).map(normalize),
+    projectRoots: (parsed.values["project-root"] ?? [join(homedir(), "code"), join(homedir(), "source")]).map(normalize),
     // Default to the home directory. Worktrees on a removable volume or under
     // the system temp dir are transient by construction — an installer's
     // scratch checkout is not a forgotten directory, and a volume that

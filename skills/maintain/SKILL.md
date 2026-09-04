@@ -132,7 +132,7 @@ These hold for every workshop, whatever its spec says:
    printf '%s\n' "$starting_integration_sha" |
      grep -Eq '^[0-9a-f]{40}$' || exit 1
    cycle_upstream_sha=$(
-     git -C "$checkout" ls-remote --exit-code --heads origin \
+     git -C "$checkout" ls-remote --exit-code --heads upstream \
        "refs/heads/$mirror_branch" | awk 'NR == 1 { print $1 }'
    ) || exit 1
    printf '%s\n' "$cycle_upstream_sha" |
@@ -145,7 +145,7 @@ These hold for every workshop, whatever its spec says:
    workshop's entrypoint:
 
    ```sh
-   git -C "$checkout" fetch --no-tags origin
+   git -C "$checkout" fetch --no-tags upstream
    git -C "$checkout" fetch --no-tags fork
    MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
      scripts/reconcile-branches.sh --check

@@ -10,7 +10,7 @@ set -euo pipefail
 #   MAINTAIN_FORK_REPO           owner/name of our fork on GitHub (required)
 #   MAINTAIN_UPSTREAM_REPO       owner/name of upstream on GitHub (required)
 #   MAINTAIN_FORK_REMOTE         remote name for the fork (default: fork)
-#   MAINTAIN_UPSTREAM_REMOTE     remote name for upstream (default: origin)
+#   MAINTAIN_UPSTREAM_REMOTE     remote name for upstream (default: upstream)
 #   MAINTAIN_UPSTREAM_SHA        exact upstream commit selected once for this
 #                                maintenance cycle (required for --check and
 #                                --apply); reconciliation reads it from the
@@ -84,7 +84,7 @@ esac
 
 checkout="${MAINTAIN_CHECKOUT:?MAINTAIN_CHECKOUT is required}"
 fork_remote="${MAINTAIN_FORK_REMOTE:-fork}"
-origin_remote="${MAINTAIN_UPSTREAM_REMOTE:-origin}"
+upstream_remote="${MAINTAIN_UPSTREAM_REMOTE:-upstream}"
 upstream_sha="${MAINTAIN_UPSTREAM_SHA:-}"
 allow_local_remotes="${MAINTAIN_ALLOW_LOCAL_REMOTES:-0}"
 if [ "$allow_local_remotes" -eq 1 ]; then
@@ -183,7 +183,7 @@ print_model() {
     printf '  "fork_repo": %s,\n' "$(json_string "$fork_repo")"
     printf '  "upstream_repo": %s,\n' "$(json_string "$upstream_repo")"
     printf '  "fork_remote": %s,\n' "$(json_string "$fork_remote")"
-    printf '  "upstream_remote": %s,\n' "$(json_string "$origin_remote")"
+    printf '  "upstream_remote": %s,\n' "$(json_string "$upstream_remote")"
     printf '  "preserve_open_prs": %s\n' "$preserve_open_prs"
     printf '}\n'
 }
@@ -338,10 +338,10 @@ verify_remote() {
 
 fork_url=$(git -C "$checkout" remote get-url "$fork_remote" 2>/dev/null) \
     || die "$checkout has no $fork_remote remote"
-origin_url=$(git -C "$checkout" remote get-url "$origin_remote" 2>/dev/null) \
-    || die "$checkout has no $origin_remote remote"
+upstream_url=$(git -C "$checkout" remote get-url "$upstream_remote" 2>/dev/null) \
+    || die "$checkout has no $upstream_remote remote"
 verify_remote "$fork_remote" "$fork_repo" "$fork_url"
-verify_remote "$origin_remote" "$upstream_repo" "$origin_url"
+verify_remote "$upstream_remote" "$upstream_repo" "$upstream_url"
 
 scratch_root=$(mktemp -d "${TMPDIR:-/tmp}/maintain-branches.XXXXXX")
 remote_heads="$scratch_root/remote-heads"
@@ -377,7 +377,7 @@ has_branch() {
 git init --quiet --bare "$snapshot_repo" \
     || die "could not create a temporary branch snapshot"
 git --git-dir="$snapshot_repo" fetch --quiet --no-tags "$checkout" \
-    "+$upstream_sha:refs/maintain/origin/main" \
+    "+$upstream_sha:refs/maintain/upstream/main" \
     || die "the bound checkout does not contain pinned upstream commit $upstream_sha"
 git --git-dir="$snapshot_repo" fetch --quiet --no-tags "$fork_url" \
     '+refs/heads/*:refs/maintain/fork/*' \
@@ -421,7 +421,7 @@ inventory_open_pr_heads() {
 
 inventory_open_pr_heads "$open_pr_heads"
 
-origin_main_sha=$(git --git-dir="$snapshot_repo" rev-parse refs/maintain/origin/main)
+upstream_main_sha=$(git --git-dir="$snapshot_repo" rev-parse refs/maintain/upstream/main)
 fork_main_sha=$(lookup_sha "$remote_heads" "$main_branch") \
     || die "$fork_remote/$main_branch is missing"
 integration_sha=$(lookup_sha "$remote_heads" "$integration_branch") \
@@ -436,14 +436,14 @@ if git -C "$checkout" rev-parse --verify --quiet \
     "refs/heads/$main_branch" >/dev/null; then
     local_main_sha=$(git -C "$checkout" rev-parse "refs/heads/$main_branch")
     git --git-dir="$snapshot_repo" merge-base --is-ancestor \
-        "$local_main_sha" "$origin_main_sha" \
-        || die "local $main_branch has commits outside $origin_remote/$main_branch"
+        "$local_main_sha" "$upstream_main_sha" \
+        || die "local $main_branch has commits outside $upstream_remote/$main_branch"
 else
     local_main_sha=missing
 fi
 git --git-dir="$snapshot_repo" merge-base --is-ancestor \
-    "$fork_main_sha" "$origin_main_sha" \
-    || die "$fork_remote/$main_branch has commits outside $origin_remote/$main_branch"
+    "$fork_main_sha" "$upstream_main_sha" \
+    || die "$fork_remote/$main_branch has commits outside $upstream_remote/$main_branch"
 
 while IFS=$'\t' read -r branch sha pr_number; do
     [ -n "$branch" ] || continue
@@ -466,7 +466,7 @@ while IFS=$'\t' read -r branch sha; do
         || die "$branch is not included in $fork_remote/$integration_branch"
 done <"$local_carries"
 
-printf 'MAIN %s %s -> %s\n' "$main_branch" "$fork_main_sha" "$origin_main_sha"
+printf 'MAIN %s %s -> %s\n' "$main_branch" "$fork_main_sha" "$upstream_main_sha"
 printf 'KEEP %s %s\n' "$integration_branch" "$integration_sha"
 while IFS=$'\t' read -r branch sha; do
     [ -n "$branch" ] || continue
@@ -499,7 +499,7 @@ done <"$remote_heads"
 
 [ "$mode" = apply ] || exit 0
 
-if [ "$local_main_sha" != "$origin_main_sha" ] \
+if [ "$local_main_sha" != "$upstream_main_sha" ] \
     && git -C "$checkout" worktree list --porcelain \
         | awk -v ref="refs/heads/$main_branch" \
             '$1 == "branch" && $2 == ref { found = 1 }
@@ -513,7 +513,7 @@ cmp -s "$open_pr_heads" "$open_pr_heads_recheck" \
 
 leases=("--force-with-lease=refs/heads/$main_branch:$fork_main_sha")
 leases+=("--force-with-lease=refs/heads/$integration_branch:$integration_sha")
-refspecs=("$origin_main_sha:refs/heads/$main_branch")
+refspecs=("$upstream_main_sha:refs/heads/$main_branch")
 refspecs+=("$integration_sha:refs/heads/$integration_branch")
 while IFS=$'\t' read -r branch sha; do
     [ -n "$branch" ] || continue
@@ -529,17 +529,17 @@ git --git-dir="$snapshot_repo" push --quiet --atomic \
     || die "could not atomically apply the fork branch policy"
 
 git -C "$checkout" fetch --quiet --no-tags "$snapshot_repo" \
-    "+refs/maintain/origin/main:refs/remotes/$origin_remote/$main_branch" \
-    || die "could not refresh $origin_remote/$main_branch tracking"
+    "+refs/maintain/upstream/main:refs/remotes/$upstream_remote/$main_branch" \
+    || die "could not refresh $upstream_remote/$main_branch tracking"
 git -C "$checkout" fetch --quiet --prune "$fork_remote" \
     || die "could not refresh $fork_remote tracking refs"
 
-if [ "$local_main_sha" != "$origin_main_sha" ]; then
-    git -C "$checkout" branch --force "$main_branch" "$origin_main_sha" \
+if [ "$local_main_sha" != "$upstream_main_sha" ]; then
+    git -C "$checkout" branch --force "$main_branch" "$upstream_main_sha" \
         || die "could not fast-forward local $main_branch"
 fi
-git -C "$checkout" branch --set-upstream-to="$origin_remote/$main_branch" "$main_branch" \
-    >/dev/null || die "could not make local $main_branch pull from $origin_remote/$main_branch"
+git -C "$checkout" branch --set-upstream-to="$upstream_remote/$main_branch" "$main_branch" \
+    >/dev/null || die "could not make local $main_branch pull from $upstream_remote/$main_branch"
 git -C "$checkout" config "branch.$main_branch.pushRemote" "$fork_remote"
 
 while IFS=$'\t' read -r branch sha; do
