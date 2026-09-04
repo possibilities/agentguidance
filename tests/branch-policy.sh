@@ -55,6 +55,11 @@ printf 'upstream\n' >>"$seed/state"
 git -C "$seed" commit --quiet -am upstream
 upstream_main_sha=$(git -C "$seed" rev-parse HEAD)
 
+printf 'future upstream\n' >>"$seed/state"
+git -C "$seed" commit --quiet -am future-upstream
+future_upstream_sha=$(git -C "$seed" rev-parse HEAD)
+git -C "$seed" switch --quiet --detach "$upstream_main_sha"
+
 git -C "$seed" switch --quiet -c carry/alpha
 printf 'carry\n' >"$seed/carry"
 git -C "$seed" add carry
@@ -98,7 +103,8 @@ git -C "$seed" push --quiet "$fork_repo" \
     "$quarantine_sha:refs/heads/already" \
     "$quarantine_sha:refs/heads/DELETEME/already"
 git -C "$seed" push --quiet "$upstream_repo" \
-    "$upstream_main_sha:refs/heads/main"
+    "$upstream_main_sha:refs/heads/main" \
+    "$future_upstream_sha:refs/fixtures/future-upstream"
 git --git-dir="$fork_repo" symbolic-ref HEAD refs/heads/main
 git --git-dir="$upstream_repo" symbolic-ref HEAD refs/heads/main
 
@@ -125,6 +131,7 @@ fi
 run_policy() {
     MAINTAIN_ALLOW_LOCAL_REMOTES=1 \
     MAINTAIN_CHECKOUT="$checkout" \
+    MAINTAIN_UPSTREAM_SHA="$upstream_main_sha" \
     MAINTAIN_OPEN_PR_HEADS_FILE="$open_pr_heads" \
     bash "$script" "$@"
 }
@@ -145,6 +152,21 @@ assert_missing_ref() {
         fail "unexpected fork branch $1"
     fi
 }
+
+set +e
+unpinned_output=$(
+    MAINTAIN_ALLOW_LOCAL_REMOTES=1 \
+    MAINTAIN_CHECKOUT="$checkout" \
+    MAINTAIN_OPEN_PR_HEADS_FILE="$open_pr_heads" \
+    bash "$script" --check 2>&1
+)
+unpinned_status=$?
+set -e
+[ "$unpinned_status" -ne 0 ] \
+    || fail "accepted branch reconciliation without a one-shot upstream target"
+printf '%s\n' "$unpinned_output" \
+    | grep -F 'MAINTAIN_UPSTREAM_SHA is required' >/dev/null \
+    || fail "did not explain the missing one-shot upstream target"
 
 before_check=$(git --git-dir="$fork_repo" for-each-ref \
     --format='%(refname)%09%(objectname)' refs/heads | LC_ALL=C sort)
@@ -184,6 +206,15 @@ printf '%s\n' "$check_output" \
     | grep -F "KEEP-DELETEME DELETEME/already $quarantine_sha" \
         >/dev/null \
     || fail "--check omitted an explicit deletion marker"
+
+# Upstream movement after the cycle target was selected belongs to the next
+# invocation. Reconciliation remains pinned even if the remote branch advances.
+git --git-dir="$upstream_repo" update-ref refs/heads/main "$future_upstream_sha"
+pinned_output=$(run_policy --check)
+printf '%s\n' "$pinned_output" \
+    | grep -F "MAIN main $old_main_sha -> $upstream_main_sha" >/dev/null \
+    || fail "reconciliation chased upstream beyond the cycle's pinned target"
+git --git-dir="$upstream_repo" update-ref refs/heads/main "$upstream_main_sha"
 
 # A required local-main move is refused while another worktree has main checked
 # out, before any fork ref is changed.
@@ -394,6 +425,7 @@ git -C "$linear_checkout" branch main "$upstream_main_sha"
 linear_output=$(
     MAINTAIN_ALLOW_LOCAL_REMOTES=1 \
     MAINTAIN_CHECKOUT="$linear_checkout" \
+    MAINTAIN_UPSTREAM_SHA="$upstream_main_sha" \
     MAINTAIN_CARRY_PREFIX='' \
     MAINTAIN_PRESERVE_OPEN_PRS=0 \
     bash "$script" --check
@@ -412,6 +444,7 @@ if printf '%s\n' "$linear_output" | grep -E '^(PUBLISH|KEEP-PR)' >/dev/null; the
 fi
 MAINTAIN_ALLOW_LOCAL_REMOTES=1 \
 MAINTAIN_CHECKOUT="$linear_checkout" \
+MAINTAIN_UPSTREAM_SHA="$upstream_main_sha" \
 MAINTAIN_CARRY_PREFIX='' \
 MAINTAIN_PRESERVE_OPEN_PRS=0 \
     bash "$script" --apply >/dev/null

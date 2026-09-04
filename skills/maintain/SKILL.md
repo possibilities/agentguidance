@@ -1,6 +1,6 @@
 ---
 name: maintain
-description: Run one maintenance cycle of a fork the machine carries, from its workshop repository — reconcile current upstream with every behavior the workshop's MAINTAIN.md requires, gate a candidate, publish the integration branch under a lease, hand it to its consumer, and record the state. Use for /maintain or "maintain the <project> fork" from a workshop checkout; installation without maintenance is the workshop's own consumer step, not this.
+description: Run one maintenance cycle of a fork the machine carries, from its workshop repository — bind one upstream snapshot, reconcile every behavior the workshop's MAINTAIN.md requires, gate a candidate, publish the integration branch under a lease, hand it to its consumer, and record the state. Use for /maintain or "maintain the <project> fork" from a workshop checkout; installation without maintenance is the workshop's own consumer step, not this.
 disable-model-invocation: true
 ---
 
@@ -73,6 +73,11 @@ These hold for every workshop, whatever its spec says:
 - Capture the fork's integration tip before the first fetch of the cycle and
   use that exact value as the publication lease. Never recompute it after a
   fetch or just before the push.
+- Capture the upstream mirror tip beside that lease and use it as the cycle's
+  immutable upstream target. Fetch upstream once, then never refetch, reselect,
+  rebase onto, gate against, or publish a later upstream tip during the same
+  invocation. Upstream movement after capture belongs to the next maintenance
+  invocation, even when it occurs before the current cycle gates or publishes.
 - Gate and publish an exact commit, never an ambient branch name.
 - The previously published integration tip and the consumer's binding stay
   intact until the new candidate has passed its gate; a failed rebase,
@@ -102,9 +107,9 @@ These hold for every workshop, whatever its spec says:
   prove every intervening upstream commit was considered as a replacement for
   every carried feature. Never advance the frontier from a feature delivery,
   a clean replay, or a green gate.
-- Reconciliation runs again after the hand-over so the mirror and declared
-  carry heads agree with the completed cycle. Temporary or obsolete branches
-  remain until a human explicitly decides their disposition.
+- Pinned reconciliation runs again after the hand-over so the mirror and
+  declared carry heads agree with the completed cycle. Temporary or obsolete
+  branches remain until a human explicitly decides their disposition.
 
 ## Establish the state
 
@@ -116,7 +121,8 @@ These hold for every workshop, whatever its spec says:
    Inventory `git worktree list --porcelain` before creating cycle
    worktrees, so cleanup can tell the bound checkout, unrelated active
    worktrees, and this cycle's own apart. Before fetching, capture and
-   validate the exact remote integration tip for the publication lease:
+   validate both the exact remote Integration tip for the publication lease
+   and the exact upstream mirror tip that this one invocation will maintain:
 
    ```sh
    starting_integration_sha=$(
@@ -125,23 +131,36 @@ These hold for every workshop, whatever its spec says:
    ) || exit 1
    printf '%s\n' "$starting_integration_sha" |
      grep -Eq '^[0-9a-f]{40}$' || exit 1
+   cycle_upstream_sha=$(
+     git -C "$checkout" ls-remote --exit-code --heads origin \
+       "refs/heads/$mirror_branch" | awk 'NR == 1 { print $1 }'
+   ) || exit 1
+   printf '%s\n' "$cycle_upstream_sha" |
+     grep -Eq '^[0-9a-f]{40}$' || exit 1
    ```
 
-3. Reconcile the branch namespace before feature work. Inspect the whole
-   plan, then apply it, through the workshop's entrypoint:
+3. Fetch both remotes once. Do not fetch upstream again during this invocation.
+   Reconcile the branch namespace before feature work, pinned to the captured
+   upstream target. Inspect the whole plan, then apply it, through the
+   workshop's entrypoint:
 
    ```sh
-   scripts/reconcile-branches.sh --check
-   scripts/reconcile-branches.sh --apply
+   git -C "$checkout" fetch --no-tags origin
+   git -C "$checkout" fetch --no-tags fork
+   MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
+     scripts/reconcile-branches.sh --check
+   MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
+     scripts/reconcile-branches.sh --apply
    ```
 
    Stop on any divergence, a missing or moved validated head, a carry outside
    integration, a lease failure, or an unexpected remote identity.
-4. Fetch both remotes. Read two distinct facts from the scratchpad: the
+4. Read two distinct facts from the scratchpad: the
    delivered baseline, which says what the consumer currently runs, and the
    audited-upstream frontier, which is the exact upstream commit through which
    the last complete maintenance audit assigned every carried feature a
-   disposition. Set the audit interval from that frontier to current upstream,
+   disposition. Set the audit interval from that frontier to the captured
+   upstream target,
    even when some or all of those commits are already in Integration because
    intervening feature work replayed the fork. Read every upstream commit in
    that aggregate interval and group related changes before judging features.
@@ -153,8 +172,8 @@ These hold for every workshop, whatever its spec says:
    If an older scratchpad does not name a frontier separately, reconstruct it
    from the last completed maintenance entry and repository history; do not
    silently substitute the newer delivered baseline. Record the migration.
-5. For each carried feature, inspect current upstream code and any historical
-   upstream reference in the scratchpad, then assign exactly one disposition:
+5. For each carried feature, inspect the captured upstream code and any
+   historical upstream reference in the scratchpad, then assign exactly one disposition:
    retire because upstream now satisfies the contract; repair because the
    feature remains carried but upstream interacts with it; or keep unchanged
    because upstream neither replaces nor affects it. A replay or conflict list
@@ -176,12 +195,12 @@ These hold for every workshop, whatever its spec says:
   `## Upstream` says the maintainer lands contributions by rewriting them
   onto their main, "landed" is decided by that reading alone.
 - Under the carry model: repair or add each absent or incomplete behavior on
-  its own `carry/<feature>` branch in its own worktree, based on current
-  upstream; compose only committed, reviewed carry heads into a scratch
+  its own `carry/<feature>` branch in its own worktree, based on the captured
+  upstream target; compose only committed, reviewed carry heads into a scratch
   integration candidate, in dependency order. Under the linear model: rebase
-  the stack as a whole onto current upstream in a scratch worktree, repairing
-  commits in place and keeping each commit's subject as the feature marker
-  the inventory refers to.
+  the stack as a whole onto the captured upstream target in a scratch worktree,
+  repairing commits in place and keeping each commit's subject as the feature
+  marker the inventory refers to.
 - When upstream changes code a carried patch calls, reread that interaction
   even when Git reports a clean rebase. Accept a rerere resolution only after
   the same semantic review.
@@ -193,7 +212,7 @@ These hold for every workshop, whatever its spec says:
   every concrete finding or record why it does not apply.
 - Never merge upstream into the previously published integration history and
   never force-update it in place while reconciling; the candidate is a new
-  history on current upstream, and the leased rewrite is expected.
+  history on the captured upstream target, and the leased rewrite is expected.
 
 ## Gate and publish
 
@@ -228,9 +247,12 @@ rebuild and install a binary, or move a pin in a consuming repository. Only
 that command binds anything. Then reconcile the namespace again, and check:
 
 ```sh
-scripts/reconcile-branches.sh --check
-scripts/reconcile-branches.sh --apply
-scripts/reconcile-branches.sh --check
+MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
+  scripts/reconcile-branches.sh --check
+MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
+  scripts/reconcile-branches.sh --apply
+MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
+  scripts/reconcile-branches.sh --check
 ```
 
 The final check reports the mirror, Integration, current carries, validated
@@ -239,11 +261,11 @@ fork head. Do not infer that an unrecognized head is obsolete.
 
 ## Offers
 
-An offer to upstream is a fresh branch cut from current upstream main and
-written as upstream would write it, with no workshop-specific concept in it
-— never a carry head or stack commit moved across. The carried patch and the
-offered patch share a behavior, not a history. `## Upstream` says what is
-offered and how landing is recognized.
+An offer made during maintenance is a fresh branch cut from the cycle's
+captured upstream target and written as upstream would write it, with no
+workshop-specific concept in it — never a carry head or stack commit moved
+across. The carried patch and the offered patch share a behavior, not a
+history. `## Upstream` says what is offered and how landing is recognized.
 
 Nothing offered is pushed unreviewed. Before the branch that opens a pull
 request goes up, and before any follow-up commit answering review, the

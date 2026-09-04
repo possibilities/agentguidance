@@ -11,6 +11,11 @@ set -euo pipefail
 #   MAINTAIN_UPSTREAM_REPO       owner/name of upstream on GitHub (required)
 #   MAINTAIN_FORK_REMOTE         remote name for the fork (default: fork)
 #   MAINTAIN_UPSTREAM_REMOTE     remote name for upstream (default: origin)
+#   MAINTAIN_UPSTREAM_SHA        exact upstream commit selected once for this
+#                                maintenance cycle (required for --check and
+#                                --apply); reconciliation reads it from the
+#                                bound checkout and never refreshes or follows
+#                                the upstream branch
 #   MAINTAIN_MAIN_BRANCH         the mirror branch (default: main)
 #   MAINTAIN_INTEGRATION_BRANCH  the published build source (default: integration)
 #   MAINTAIN_CARRY_PREFIX        carried-feature branch prefix (default: carry/;
@@ -80,6 +85,7 @@ esac
 checkout="${MAINTAIN_CHECKOUT:?MAINTAIN_CHECKOUT is required}"
 fork_remote="${MAINTAIN_FORK_REMOTE:-fork}"
 origin_remote="${MAINTAIN_UPSTREAM_REMOTE:-origin}"
+upstream_sha="${MAINTAIN_UPSTREAM_SHA:-}"
 allow_local_remotes="${MAINTAIN_ALLOW_LOCAL_REMOTES:-0}"
 if [ "$allow_local_remotes" -eq 1 ]; then
     fork_repo="${MAINTAIN_FORK_REPO:-local/fork}"
@@ -113,6 +119,15 @@ case "$quarantine_prefix" in */) ;; *) die "the quarantine prefix must end with 
 for prefix in $carry_prefix_list; do
     [ "$prefix" != "$quarantine_prefix" ] || die "the carry and quarantine prefixes must differ"
 done
+if [ "$mode" = check ] || [ "$mode" = apply ]; then
+    [ -n "$upstream_sha" ] \
+        || die "MAINTAIN_UPSTREAM_SHA is required; capture one upstream target before the cycle's only fetch"
+    [ "${#upstream_sha}" -eq 40 ] \
+        || die "MAINTAIN_UPSTREAM_SHA must be one exact 40-character lowercase commit SHA"
+    case "$upstream_sha" in
+        *[!0-9a-f]*) die "MAINTAIN_UPSTREAM_SHA must be one exact 40-character lowercase commit SHA" ;;
+    esac
+fi
 
 # Branch classification by the declared model.
 # A carry is any branch under a declared prefix, or one named exactly by a
@@ -361,9 +376,9 @@ has_branch() {
 
 git init --quiet --bare "$snapshot_repo" \
     || die "could not create a temporary branch snapshot"
-git --git-dir="$snapshot_repo" fetch --quiet --no-tags "$origin_url" \
-    "+refs/heads/$main_branch:refs/maintain/origin/main" \
-    || die "could not snapshot $origin_remote/$main_branch"
+git --git-dir="$snapshot_repo" fetch --quiet --no-tags "$checkout" \
+    "+$upstream_sha:refs/maintain/origin/main" \
+    || die "the bound checkout does not contain pinned upstream commit $upstream_sha"
 git --git-dir="$snapshot_repo" fetch --quiet --no-tags "$fork_url" \
     '+refs/heads/*:refs/maintain/fork/*' \
     || die "could not snapshot $fork_remote branches"
