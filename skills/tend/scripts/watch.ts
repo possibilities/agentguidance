@@ -1703,8 +1703,23 @@ function renderEntry(record: ParkRecord): string {
   return lines.join("\n");
 }
 
-export function renderParked(records: readonly ParkRecord[]): string {
-  return `${[PARKED_HEADER, ...records.map(renderEntry)].join(PARK_SEPARATOR)}\n`;
+export function renderParked(
+  records: readonly ParkRecord[],
+  header: string = PARKED_HEADER,
+): string {
+  return `${[header, ...records.map(renderEntry)].join(PARK_SEPARATOR)}\n`;
+}
+
+/** Everything before the first rule is the human's: the title, the standing
+ * note about what the document is, and whatever they keep above the entries.
+ * The parser never reads it as a record, so a save that rebuilt the file from
+ * records alone would silently erase it. This returns that chunk as written,
+ * minus trailing blank lines, so a save can put it back; an empty or missing
+ * one falls back to the standard header. */
+export function parkedHeader(text: string): string {
+  const chunk = text.split(/\n---\n/, 1)[0] ?? "";
+  const header = chunk.replace(/\s+$/, "");
+  return header === "" ? PARKED_HEADER : header;
 }
 
 function parseEntry(chunk: string): ParkRecord | null {
@@ -1790,8 +1805,14 @@ export function saveParked(
   records: readonly ParkRecord[],
   path: string = parkedFilePath(),
 ): void {
+  let header = PARKED_HEADER;
+  try {
+    header = parkedHeader(readFileSync(path, "utf8"));
+  } catch {
+    // No document yet: the standard header starts it.
+  }
   const staging = `${path}.${process.pid}.tmp`;
-  writeFileSync(staging, renderParked(records), "utf8");
+  writeFileSync(staging, renderParked(records, header), "utf8");
   renameSync(staging, path);
 }
 

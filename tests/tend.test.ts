@@ -31,6 +31,7 @@ import {
   worktreeHasActiveAgent,
   loadParked,
   parkWorktree,
+  parkedHeader,
   parseParked,
   renderParked,
   unparkCommand,
@@ -1711,6 +1712,38 @@ describe("Durable park", () => {
     const records = loadParked(file);
     expect(records).toHaveLength(1);
     expect(records[0]).toEqual(second);
+  });
+
+  test("a save keeps whatever the human wrote above the first rule", () => {
+    const { repository, worktreeRoot } = fixture();
+    const worktree = addWorktree(repository, worktreeRoot);
+    const file = parkedFile();
+
+    const first = parkWorktree({ worktree, summary: "First.", reason: "first", file });
+    const written = readFileSync(file, "utf8");
+    expect(written.startsWith("# Parked")).toBe(true);
+
+    // The human adds their own notes to the header chunk by hand.
+    const header = "# Parked\n\nMy own note.\n\nfunk @ ghostty-startup-and-control-scripts";
+    writeFileSync(file, written.replace(parkedHeader(written), header), "utf8");
+    expect(parkedHeader(readFileSync(file, "utf8"))).toBe(header);
+    expect(loadParked(file)).toEqual([first]);
+
+    // Re-parking rewrites the file, and the header comes through as written.
+    const second = parkWorktree({ worktree, summary: "Second.", reason: "second", file });
+    const saved = readFileSync(file, "utf8");
+    expect(saved.startsWith(`${header}\n\n---\n\n## `)).toBe(true);
+    expect(loadParked(file)).toEqual([second]);
+
+    // Unparking the last record leaves the header alone too.
+    unparkWorktree(worktree, file);
+    expect(readFileSync(file, "utf8")).toBe(`${header}\n`);
+    expect(loadParked(file)).toEqual([]);
+
+    // An empty header chunk falls back to the standard one rather than
+    // producing a document with no title.
+    expect(parkedHeader("")).toBe(renderParked([]).trimEnd());
+    expect(parkedHeader("\n\n---\n\n## x")).toBe(renderParked([]).trimEnd());
   });
 
   test("refuses to park anything that is not a worktree root", () => {

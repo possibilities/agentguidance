@@ -327,10 +327,13 @@ bun scripts/watch.ts --park PATH \
   --reason "why it is being put away"
 ```
 
-Never write or edit the document by hand. The helper reads the branch, the
-exact commit, and the session identity from Git and the Surface rather than
-from recollection; a park whose sha or session id is misremembered is a park
-that cannot be unparked, which is the only way this feature fails. It writes:
+Never write or edit an entry by hand. Everything above the first rule is
+yours — the title, a standing note, a list of your own — and every save puts
+it back exactly as written, so keep what you like there. The entries below
+the rule are the helper's. It reads the branch, the exact commit, and the
+session identity from Git and the Surface rather than from recollection; a
+park whose sha or session id is misremembered is a park that cannot be
+unparked, which is the only way this feature fails. It writes:
 the worktree path, its repository, the branch and full sha1, the harness and
 native session id, the agent's cwd when it differs from the worktree, a
 snapshot ref when there was uncommitted work, and the command chain that
