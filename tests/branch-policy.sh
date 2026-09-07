@@ -403,6 +403,115 @@ printf '%s\n' "$bad_carry_output" \
 git -C "$checkout" branch --delete --force carry/not-integrated >/dev/null
 assert_missing_ref carry/not-integrated
 
+# Every declared prefix and exact carry ref participates in the same ancestry
+# check and publication; legacy carry names must not silently become ordinary
+# heads merely because they do not use the primary prefix.
+git -C "$checkout" branch downstream/beta "$carry_sha"
+git -C "$checkout" branch legacy-carry "$carry_sha"
+model_output=$(
+    MAINTAIN_CARRY_PREFIX='carry/ downstream/' \
+    MAINTAIN_CARRY_REFS=legacy-carry run_policy --check
+)
+for carry_name in downstream/beta legacy-carry; do
+    printf '%s\n' "$model_output" \
+        | grep -F "PUBLISH $carry_name missing -> $carry_sha" >/dev/null \
+        || fail "a declared carry was omitted: $carry_name"
+done
+MAINTAIN_CARRY_PREFIX='carry/ downstream/' \
+MAINTAIN_CARRY_REFS=legacy-carry run_policy --apply >/dev/null
+assert_ref downstream/beta "$carry_sha"
+assert_ref legacy-carry "$carry_sha"
+for carry_name in downstream/beta legacy-carry; do
+    git -C "$checkout" branch --force "$carry_name" "$pr_sha" >/dev/null
+    set +e
+    rejected_output=$(
+        MAINTAIN_CARRY_PREFIX='carry/ downstream/' \
+        MAINTAIN_CARRY_REFS=legacy-carry run_policy --check 2>&1
+    )
+    rejected_status=$?
+    set -e
+    [ "$rejected_status" -ne 0 ] || fail "accepted unintegrated $carry_name"
+    printf '%s\n' "$rejected_output" \
+        | grep -F "$carry_name is not included in fork/integration" >/dev/null \
+        || fail "did not explain unintegrated $carry_name"
+    git -C "$checkout" branch --force "$carry_name" "$carry_sha" >/dev/null
+done
+set +e
+missing_carry_output=$(MAINTAIN_CARRY_REFS=missing-carry run_policy --check 2>&1)
+missing_carry_status=$?
+set -e
+[ "$missing_carry_status" -ne 0 ] || fail "ignored a missing declared carry"
+printf '%s\n' "$missing_carry_output" \
+    | grep -F 'declared carry head missing-carry is missing locally' >/dev/null \
+    || fail "did not explain the missing declared carry"
+for carry_name in downstream/beta legacy-carry; do
+    git -C "$checkout" branch --delete --force "$carry_name" >/dev/null
+    git --git-dir="$fork_repo" update-ref -d "refs/heads/$carry_name"
+done
+
+# Local carries belong to the inventory snapshot too. A concurrent worker
+# moving one during planning must not let --apply publish a stale local head.
+local_race_lock="$test_root/local-race-lock"
+set +e
+local_race_output=$(
+    PATH="$race_bin:$PATH" \
+    MAINTAIN_REAL_GIT="$real_git" \
+    MAINTAIN_RACE_TRIGGER=refs/maintain/upstream/main \
+    MAINTAIN_RACE_LOCK="$local_race_lock" \
+    MAINTAIN_RACE_REPO="$checkout/.git" \
+    MAINTAIN_RACE_REF=refs/heads/carry/alpha \
+    MAINTAIN_RACE_SHA="$integration_sha" \
+    run_policy --apply 2>&1
+)
+local_race_status=$?
+set -e
+[ "$local_race_status" -ne 0 ] || fail "published after a local carry changed"
+printf '%s\n' "$local_race_output" \
+    | grep -F 'local maintenance heads changed since planning; rerun' >/dev/null \
+    || fail "did not explain the local carry race"
+assert_ref carry/alpha "$carry_sha"
+[ "$(git -C "$checkout" rev-parse refs/heads/carry/alpha)" = "$integration_sha" ] \
+    || fail "overwrote a concurrently changed local carry"
+git -C "$checkout" update-ref refs/heads/carry/alpha "$carry_sha" "$integration_sha"
+
+# A configured push URL is authoritative. Ignoring it silently publishes via
+# the fetch transport, bypassing the user's authentication/routing choice.
+git -C "$checkout" config remote.fork.pushurl "$test_root/missing-push.git"
+set +e
+pushurl_output=$(run_policy --apply 2>&1)
+pushurl_status=$?
+set -e
+[ "$pushurl_status" -ne 0 ] || fail "ignored the fork's configured push URL"
+printf '%s\n' "$pushurl_output" \
+    | grep -F 'could not atomically apply the fork branch policy' >/dev/null \
+    || fail "did not report failure from the configured push endpoint"
+git -C "$checkout" config --unset remote.fork.pushurl
+
+# A different authentication transport is allowed; a different repository is
+# not, even when the fetch endpoint still names the declared fork.
+git -C "$checkout" remote set-url fork https://github.com/fixture/fork.git
+git -C "$checkout" remote set-url upstream https://github.com/fixture/upstream.git
+git -C "$checkout" config remote.fork.pushurl git@github.com:unrelated/fork.git
+set +e
+wrong_push_repo_output=$(
+    MAINTAIN_ALLOW_LOCAL_REMOTES=0 \
+    MAINTAIN_FORK_REPO=fixture/fork \
+    MAINTAIN_UPSTREAM_REPO=fixture/upstream \
+    MAINTAIN_CHECKOUT="$checkout" \
+    MAINTAIN_UPSTREAM_SHA="$upstream_main_sha" \
+    MAINTAIN_OPEN_PR_HEADS_FILE="$open_pr_heads" \
+    bash "$script" --check 2>&1
+)
+wrong_push_repo_status=$?
+set -e
+[ "$wrong_push_repo_status" -ne 0 ] || fail "accepted an unrelated push repository"
+printf '%s\n' "$wrong_push_repo_output" \
+    | grep -F 'remote fork push points at git@github.com:unrelated/fork.git' >/dev/null \
+    || fail "did not reject the unrelated push repository before fetching"
+git -C "$checkout" remote set-url fork "$fork_repo"
+git -C "$checkout" remote set-url upstream "$upstream_repo"
+git -C "$checkout" config --unset remote.fork.pushurl
+
 # Open PR heads are frozen to the exact commit returned by GitHub.
 printf 'pr/open\t%s\t123\n' "$stale_sha" >"$open_pr_heads"
 set +e
@@ -514,6 +623,64 @@ expected_linear=$(printf '%s\n' \
 [ "$linear_heads" = "$expected_linear" ] \
     || fail "linear model changed an undeclared head: $linear_heads"
 
+# Exercise the skill's publication recipe itself: a candidate changes Main,
+# Integration and a carry together, and a stale carry lease rejects all three.
+# This also keeps the documented protocol from drifting back to an
+# Integration-only push followed by deferred carry reconciliation.
+publication_fork="$test_root/publication-fork.git"
+git clone --quiet --bare "$fork_repo" "$publication_fork"
+git --git-dir="$publication_fork" update-ref refs/heads/main "$old_main_sha"
+publication_tree=$(git -C "$seed" rev-parse "$integration_sha^{tree}")
+publication_candidate=$(printf 'new composition\n' | git -C "$seed" commit-tree \
+    "$publication_tree" -p "$integration_sha")
+publication_cycle="$test_root/publication-cycle"
+mkdir "$publication_cycle"
+git ls-remote --heads "$publication_fork" >"$publication_cycle/fork-heads"
+printf 'refs/heads/carry/alpha\t%s\nrefs/heads/carry/new\t%s\n' \
+    "$publication_candidate" "$publication_candidate" >"$publication_cycle/carries.tsv"
+{
+    printf 'set -euo pipefail\n'
+    awk '/^publication_leases=\(/ { inside = 1 }
+         inside && /^```/ { exit }
+         inside { print }' "$root/skills/maintain/SKILL.md"
+} >"$test_root/publish.sh"
+run_publication_recipe() {
+    cycle_state="$publication_cycle" \
+    cycle_fork_heads="$publication_cycle/fork-heads" \
+    mirror_branch=main \
+    integration_branch=integration \
+    starting_mirror_sha="$old_main_sha" \
+    starting_integration_sha="$integration_sha" \
+    cycle_upstream_sha="$upstream_main_sha" \
+    candidate_worktree="$seed" \
+    candidate_sha="$publication_candidate" \
+    fork_remote="$publication_fork" \
+        bash "$test_root/publish.sh"
+}
+git --git-dir="$publication_fork" update-ref refs/heads/carry/alpha "$pr_sha"
+if run_publication_recipe >/dev/null 2>&1; then
+    fail "documented publication accepted a stale carry lease"
+fi
+[ "$(git --git-dir="$publication_fork" rev-parse refs/heads/main)" = "$old_main_sha" ] \
+    || fail "a rejected publication changed Main"
+[ "$(git --git-dir="$publication_fork" rev-parse refs/heads/integration)" = "$integration_sha" ] \
+    || fail "a rejected publication changed Integration"
+git --git-dir="$publication_fork" update-ref refs/heads/carry/alpha "$carry_sha"
+git --git-dir="$publication_fork" update-ref refs/heads/carry/new "$pr_sha"
+if run_publication_recipe >/dev/null 2>&1; then
+    fail "documented publication overwrote a newly appeared carry"
+fi
+[ "$(git --git-dir="$publication_fork" rev-parse refs/heads/integration)" = "$integration_sha" ] \
+    || fail "an appearing carry allowed partial Integration publication"
+git --git-dir="$publication_fork" update-ref -d refs/heads/carry/new
+run_publication_recipe >/dev/null 2>&1
+[ "$(git --git-dir="$publication_fork" rev-parse refs/heads/main)" = "$upstream_main_sha" ] \
+    || fail "documented publication omitted Main"
+for published_branch in carry/alpha carry/new integration; do
+    [ "$(git --git-dir="$publication_fork" rev-parse "refs/heads/$published_branch")" = "$publication_candidate" ] \
+        || fail "documented publication omitted $published_branch"
+done
+
 # Declared names are validated before anything is read.
 set +e
 bad_prefix_output=$(
@@ -528,6 +695,24 @@ set -e
 printf '%s\n' "$bad_prefix_output" \
     | grep -F 'the quarantine prefix must end with a slash' >/dev/null \
     || fail "did not explain the bad quarantine prefix"
+
+# A declaration must never classify a deletion marker or a core branch as
+# carried work. Invalid booleans must not leak malformed JSON either.
+for invalid_model in \
+    'MAINTAIN_CARRY_PREFIX=DELETEME/nested/' \
+    'MAINTAIN_QUARANTINE_PREFIX=carry/DELETEME/' \
+    'MAINTAIN_CARRY_REFS=DELETEME/legacy' \
+    'MAINTAIN_CARRY_REFS=integration' \
+    'MAINTAIN_CARRY_REFS=bad..branch' \
+    'MAINTAIN_CARRY_PREFIX=bad[pattern/' \
+    'MAINTAIN_PRESERVE_OPEN_PRS=true' \
+    'MAINTAIN_ALLOW_LOCAL_REMOTES=maybe'
+do
+    if env MAINTAIN_ALLOW_LOCAL_REMOTES=1 MAINTAIN_CHECKOUT="$checkout" \
+        "$invalid_model" bash "$script" --print-model >/dev/null 2>&1; then
+        fail "accepted invalid branch declaration: $invalid_model"
+    fi
+done
 
 # The declaration is also data. --print-model must answer without touching the
 # repository, because a tool asking how a fork is shaped is not doing

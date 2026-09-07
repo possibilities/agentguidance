@@ -29,7 +29,7 @@ tests/branch-policy.sh
 # A maintenance cycle fetches only its preselected upstream object. A broad
 # upstream fetch would import a later Main or topic and defeat one-shot scope.
 # shellcheck disable=SC2016 # Match the literal documented shell variables.
-grep -F 'git -C "$checkout" fetch --no-tags upstream "$cycle_upstream_sha"' \
+grep -F 'git -C "$checkout" fetch --no-tags "$upstream_remote" "$cycle_upstream_sha"' \
     skills/maintain/SKILL.md >/dev/null \
     || fail "maintain does not fetch the exact captured upstream object"
 if grep -Eq 'fetch --no-tags upstream[[:space:]]*$' skills/maintain/SKILL.md; then

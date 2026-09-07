@@ -70,9 +70,10 @@ These hold for every workshop, whatever its spec says:
 - Local and fork mirror branches are kept at the exact upstream commit and
   never hold downstream-only work. The integration branch is the only thing
   a consumer builds from and is nobody's review context.
-- Capture the fork's integration tip before the first fetch of the cycle and
-  use that exact value as the publication lease. Never recompute it after a
-  fetch or just before the push.
+- Capture all fork heads before the first fetch of the cycle. Use those exact
+  values as publication leases for the mirror, Integration, and every current
+  carry; a new carry's lease requires absence. Never replace a starting lease
+  with a tip observed after a fetch or just before the push.
 - Capture the upstream mirror tip beside that lease and use it as the cycle's
   immutable upstream target. Fetch exactly that object once, never a moving
   upstream ref or the remote's configured refspec, then never refetch, reselect,
@@ -97,8 +98,15 @@ These hold for every workshop, whatever its spec says:
   other fork head is left unchanged. A `DELETEME/<original>` head records an
   explicit human decision about that branch; maintenance reports it but never
   creates, moves, or removes it implicitly. `reconcile-branches.sh --check` is
-  read-only and works from a disposable snapshot; `--apply` publishes the
-  declared refs in one atomic, exact-leased push.
+  read-only and works from a disposable snapshot; `--apply` repairs an already
+  published composition in one atomic, exact-leased push. It requires local
+  and remote Integration to agree, so it cannot publish a new candidate.
+- Publish the mirror, exact candidate Integration, and every declared carry
+  together in one atomic push after the gate. Integration-first publication
+  followed by carry reconciliation exposes a graph that never passed the gate.
+  A no-op Integration refspec is not a serialization lock: Git can omit
+  up-to-date refs from the server transaction. Re-read the complete published
+  graph before hand-over; never infer its state from a successful no-op push.
 - Carried work must be an ancestor of the published integration branch —
   every carry head under the carry model, every stack commit under the
   linear model.
@@ -124,19 +132,28 @@ These hold for every workshop, whatever its spec says:
    checkout is clean and its remotes are the ones `## Upstream` names.
    Inventory `git worktree list --porcelain` before creating cycle
    worktrees, so cleanup can tell the bound checkout, unrelated active
-   worktrees, and this cycle's own apart. Before fetching, capture and
-   validate both the exact remote Integration tip for the publication lease
-   and the exact upstream mirror tip that this one invocation will maintain:
+   worktrees, and this cycle's own apart. Resolve the checkout, remotes and
+   branch names from the declared model; upstream is not always named
+   `upstream`. Before fetching, retain one fork-head snapshot in cycle-owned
+   state, then capture the upstream mirror tip this invocation will maintain:
 
    ```sh
+   cycle_state=$(mktemp -d "${TMPDIR:-/tmp}/maintain-cycle.XXXXXX")
+   cycle_fork_heads="$cycle_state/fork-heads"
+   git -C "$checkout" ls-remote --heads "$fork_remote" >"$cycle_fork_heads" || exit 1
    starting_integration_sha=$(
-     git -C "$checkout" ls-remote --exit-code --heads fork \
-       "refs/heads/$integration_branch" | awk 'NR == 1 { print $1 }'
+     awk -v ref="refs/heads/$integration_branch" \
+       '$2 == ref { print $1; found = 1 } END { exit !found }' "$cycle_fork_heads"
    ) || exit 1
-   printf '%s\n' "$starting_integration_sha" |
-     grep -Eq '^[0-9a-f]{40}$' || exit 1
+   starting_mirror_sha=$(
+     awk -v ref="refs/heads/$mirror_branch" \
+       '$2 == ref { print $1; found = 1 } END { exit !found }' "$cycle_fork_heads"
+   ) || exit 1
+   for starting_sha in "$starting_integration_sha" "$starting_mirror_sha"; do
+     printf '%s\n' "$starting_sha" | grep -Eq '^[0-9a-f]{40}$' || exit 1
+   done
    cycle_upstream_sha=$(
-     git -C "$checkout" ls-remote --exit-code --heads upstream \
+     git -C "$checkout" ls-remote --exit-code --heads "$upstream_remote" \
        "refs/heads/$mirror_branch" | awk 'NR == 1 { print $1 }'
    ) || exit 1
    printf '%s\n' "$cycle_upstream_sha" |
@@ -147,21 +164,21 @@ These hold for every workshop, whatever its spec says:
    upstream ref or configured upstream refspec. Fetch the fork separately.
    Do not fetch upstream again during this invocation. Reconcile the branch
    namespace before feature work, pinned to the captured upstream target.
-   Inspect the whole plan, then apply it, through the workshop's entrypoint:
+   Inspect the whole plan through the workshop's entrypoint; leave ref changes
+   for the gated publication:
 
    ```sh
-   git -C "$checkout" fetch --no-tags upstream "$cycle_upstream_sha"
-   git -C "$checkout" fetch --no-tags fork
+   git -C "$checkout" fetch --no-tags "$upstream_remote" "$cycle_upstream_sha"
+   git -C "$checkout" fetch --no-tags "$fork_remote"
    MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
      scripts/reconcile-branches.sh --check
-   MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
-     scripts/reconcile-branches.sh --apply
    ```
 
    The upstream fetch writes the captured object to `FETCH_HEAD`; it does not
-   update or populate upstream remote-tracking refs. Reconciliation materializes
-   only the pinned mirror commit locally and on the fork. A later upstream Main
-   or topic head must not enter the cycle through this fetch.
+   update or populate upstream remote-tracking refs. A later upstream Main or
+   topic head must not enter the cycle through this fetch. The read-only plan
+   checks the published baseline; do not run `--apply` before the gate or use
+   a later reconciliation snapshot to replace the captured publication leases.
 
    Stop on any divergence, a missing or moved validated head, a carry outside
    integration, a lease failure, or an unexpected remote identity.
@@ -226,6 +243,12 @@ These hold for every workshop, whatever its spec says:
 
 ## Gate and publish
 
+Before gating, freeze the full ref name and exact commit of each current
+carry in `$cycle_state/carries.tsv`, one tab-separated pair per line, and
+check that this set equals `## Features`. Use an empty file for a linear
+stack. Every carry must be committed and included in the candidate; neither
+uncommitted inventory changes nor ambient carry branches define a release.
+
 From the candidate worktree, run `## Gate` verbatim — every command, in
 order — then focused checks for every changed feature, exercising each
 changed happy path with that worktree's freshly built binary. Where the
@@ -235,15 +258,38 @@ on the fork, without touching the integration branch or any preserved
 head, and obtain that proof for that SHA. A stale, partial, skipped,
 cancelled, or merely local result is not proof.
 
-Re-read the fork's integration tip immediately before publication, then use
-the exact starting tip recorded before the first fetch as the lease. Publish
-the gated commit, never the branch name:
+After the gate, re-read the fork heads and reject a change to any publication
+target since the starting snapshot. Build the transaction only from that
+snapshot, the frozen carry manifest, and the exact gated commit:
 
 ```sh
-git -C "$candidate_worktree" push fork \
-  "$candidate_sha:refs/heads/$integration_branch" \
-  --force-with-lease="refs/heads/$integration_branch:$starting_integration_sha"
+publication_leases=(
+  "--force-with-lease=refs/heads/$mirror_branch:$starting_mirror_sha"
+  "--force-with-lease=refs/heads/$integration_branch:$starting_integration_sha"
+)
+publication_refs=(
+  "$cycle_upstream_sha:refs/heads/$mirror_branch"
+  "$candidate_sha:refs/heads/$integration_branch"
+)
+while IFS=$'\t' read -r carry_ref carry_sha; do
+  [ -n "$carry_ref" ] || continue
+  git -C "$candidate_worktree" merge-base --is-ancestor "$carry_sha" "$candidate_sha" || exit 1
+  starting_carry_sha=$(awk -v ref="$carry_ref" '$2 == ref { print $1 }' "$cycle_fork_heads")
+  publication_leases+=("--force-with-lease=$carry_ref:$starting_carry_sha")
+  publication_refs+=("$carry_sha:$carry_ref")
+done <"$cycle_state/carries.tsv"
+git -C "$candidate_worktree" push --atomic "${publication_leases[@]}" \
+  "$fork_remote" "${publication_refs[@]}"
 ```
+
+Use the fork's verified push URL when it differs from its fetch transport;
+both must identify the declared repository. There is no non-atomic fallback.
+An older workshop whose publication scope excludes a required mirror or carry
+update needs that policy resolved before shipping; this skill does not broaden
+its authorization. Re-read every published target and require its exact
+intended SHA before invoking the consumer. If a concurrent writer changed it,
+retain the gate evidence and report the conflict instead of installing or
+recapturing leases for a blind retry.
 
 If rebase, gate, or publication fails, leave the previous integration branch
 and the consumer's binding in place. Report the exact failed gate and retain
@@ -254,7 +300,8 @@ a useful worktree when it is needed for follow-up.
 After the leased push succeeds, run `## Consumer` — the workshop's own
 command, which may bind the bound checkout to the published commit,
 rebuild and install a binary, or move a pin in a consuming repository. Only
-that command binds anything. Then reconcile the namespace again, and check:
+that command binds anything. Then reconcile the namespace again to repair
+local mirror and tracking state, and check:
 
 ```sh
 MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
@@ -265,9 +312,11 @@ MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
   scripts/reconcile-branches.sh --check
 ```
 
-The final check reports the mirror, Integration, current carries, validated
-open-request heads, explicit `DELETEME/*` markers, and every other untouched
-fork head. Do not infer that an unrecognized head is obsolete.
+This is consistency repair, never deferred publication of newly gated carries.
+If it proposes changing the remote graph just handed over, stop and inspect the
+drift before applying it. The final check reports the mirror, Integration,
+current carries, validated open-request heads, explicit `DELETEME/*` markers,
+and every other untouched fork head. Do not infer that an unrecognized head is obsolete.
 
 ## Offers
 

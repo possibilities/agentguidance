@@ -18,8 +18,11 @@ set -euo pipefail
 #                                the upstream branch
 #   MAINTAIN_MAIN_BRANCH         the mirror branch (default: main)
 #   MAINTAIN_INTEGRATION_BRANCH  the published build source (default: integration)
-#   MAINTAIN_CARRY_PREFIX        carried-feature branch prefix (default: carry/;
-#                                empty for a linear stack with no carry heads)
+#   MAINTAIN_CARRY_PREFIX        space-separated carried-feature prefixes
+#                                (default: carry/; empty for a linear stack)
+#   MAINTAIN_CARRY_REFS          space-separated exact legacy carry branch names
+#                                (default: empty); each must exist locally
+#   MAINTAIN_WORKSHOP_CHECKOUTS  space-separated bound checkouts (default: checkout)
 #   MAINTAIN_QUARANTINE_PREFIX   explicit deletion-marker namespace
 #                                (default: DELETEME/); reconciliation reports
 #                                these heads but never creates or removes them
@@ -87,6 +90,7 @@ fork_remote="${MAINTAIN_FORK_REMOTE:-fork}"
 upstream_remote="${MAINTAIN_UPSTREAM_REMOTE:-upstream}"
 upstream_sha="${MAINTAIN_UPSTREAM_SHA:-}"
 allow_local_remotes="${MAINTAIN_ALLOW_LOCAL_REMOTES:-0}"
+case "$allow_local_remotes" in 0|1) ;; *) die "MAINTAIN_ALLOW_LOCAL_REMOTES must be 0 or 1" ;; esac
 if [ "$allow_local_remotes" -eq 1 ]; then
     fork_repo="${MAINTAIN_FORK_REPO:-local/fork}"
     upstream_repo="${MAINTAIN_UPSTREAM_REPO:-local/upstream}"
@@ -103,6 +107,7 @@ workshop_checkouts_list="${MAINTAIN_WORKSHOP_CHECKOUTS:-}"
 carry_prefix="${carry_prefix_list%% *}"
 quarantine_prefix="${MAINTAIN_QUARANTINE_PREFIX:-DELETEME/}"
 preserve_open_prs="${MAINTAIN_PRESERVE_OPEN_PRS:-1}"
+case "$preserve_open_prs" in 0|1) ;; *) die "MAINTAIN_PRESERVE_OPEN_PRS must be 0 or 1" ;; esac
 open_pr_heads_override="${MAINTAIN_OPEN_PR_HEADS_FILE:-}"
 workshop="${MAINTAIN_WORKSHOP:-}"
 
@@ -118,6 +123,30 @@ done
 case "$quarantine_prefix" in */) ;; *) die "the quarantine prefix must end with a slash: $quarantine_prefix" ;; esac
 for prefix in $carry_prefix_list; do
     [ "$prefix" != "$quarantine_prefix" ] || die "the carry and quarantine prefixes must differ"
+done
+# Validate names before reporting or acting on the model. Overlapping marker
+# and carry namespaces would let an ordinary publication move human-owned
+# deletion decisions, even when the prefixes are not equal.
+command -v git >/dev/null 2>&1 || die "git is required"
+for branch in "$main_branch" "$integration_branch" $carry_refs_list; do
+    git check-ref-format "refs/heads/$branch" >/dev/null \
+        || die "invalid declared branch: $branch"
+done
+git check-ref-format "refs/heads/${quarantine_prefix}probe" >/dev/null \
+    || die "invalid deletion-marker prefix: $quarantine_prefix"
+for prefix in $carry_prefix_list; do
+    git check-ref-format "refs/heads/${prefix}probe" >/dev/null \
+        || die "invalid carry prefix: $prefix"
+    if [ "${prefix#"$quarantine_prefix"}" != "$prefix" ] \
+        || [ "${quarantine_prefix#"$prefix"}" != "$quarantine_prefix" ]; then
+        die "the carry and deletion-marker namespaces overlap: $prefix, $quarantine_prefix"
+    fi
+done
+for ref in $carry_refs_list; do
+    if [ "$ref" = "$main_branch" ] || [ "$ref" = "$integration_branch" ] \
+        || [ "${ref#"$quarantine_prefix"}" != "$ref" ]; then
+        die "declared carry head uses a reserved maintenance branch: $ref"
+    fi
 done
 if [ "$mode" = check ] || [ "$mode" = apply ]; then
     [ -n "$upstream_sha" ] \
@@ -340,13 +369,18 @@ fork_url=$(git -C "$checkout" remote get-url "$fork_remote" 2>/dev/null) \
     || die "$checkout has no $fork_remote remote"
 upstream_url=$(git -C "$checkout" remote get-url "$upstream_remote" 2>/dev/null) \
     || die "$checkout has no $upstream_remote remote"
+fork_push_url=$(git -C "$checkout" remote get-url --push "$fork_remote" 2>/dev/null) \
+    || die "$checkout has no $fork_remote push URL"
 verify_remote "$fork_remote" "$fork_repo" "$fork_url"
+verify_remote "$fork_remote push" "$fork_repo" "$fork_push_url"
 verify_remote "$upstream_remote" "$upstream_repo" "$upstream_url"
 
 scratch_root=$(mktemp -d "${TMPDIR:-/tmp}/maintain-branches.XXXXXX")
 remote_heads="$scratch_root/remote-heads"
 open_pr_heads="$scratch_root/open-pr-heads"
 local_carries="$scratch_root/local-carries"
+local_heads="$scratch_root/local-heads"
+local_heads_recheck="$scratch_root/local-heads-recheck"
 open_pr_heads_recheck="$scratch_root/open-pr-heads-recheck"
 snapshot_repo="$scratch_root/snapshot.git"
 
@@ -390,13 +424,18 @@ git --git-dir="$snapshot_repo" for-each-ref \
     --format='%(refname:strip=3)%09%(objectname)' refs/maintain/fork/ \
     | LC_ALL=C sort >"$remote_heads"
 
-if [ -n "$carry_prefix" ]; then
-    git -C "$checkout" for-each-ref \
-        --format='%(refname:short)%09%(objectname)' "refs/heads/$carry_prefix" \
-        | LC_ALL=C sort >"$local_carries"
-else
-    : >"$local_carries"
-fi
+# Use the same frozen local snapshot for classification, validation and push.
+# The primary prefix is only a naming preference; secondary prefixes and
+# legacy exact refs carry the same ancestry and publication obligations.
+git --git-dir="$snapshot_repo" for-each-ref \
+    --format='%(refname:strip=3)%09%(objectname)' refs/maintain/local/ \
+    | while IFS=$'\t' read -r branch sha; do
+        if is_carry "$branch"; then printf '%s\t%s\n' "$branch" "$sha"; fi
+    done | LC_ALL=C sort >"$local_carries"
+for ref in $carry_refs_list; do
+    has_branch "$local_carries" "$ref" \
+        || die "declared carry head $ref is missing locally"
+done
 
 inventory_open_pr_heads() {
     local output="$1"
@@ -419,6 +458,19 @@ inventory_open_pr_heads() {
     fi
 }
 
+inventory_local_heads() {
+    local repo="$1" namespace="$2" strip="$3" output="$4"
+    git --git-dir="$repo" for-each-ref \
+        --format="%(refname:strip=$strip)%09%(objectname)" "$namespace" \
+        | while IFS=$'\t' read -r branch sha; do
+            if [ "$branch" = "$main_branch" ] || [ "$branch" = "$integration_branch" ] \
+                || is_carry "$branch"; then
+                printf '%s\t%s\n' "$branch" "$sha"
+            fi
+        done | LC_ALL=C sort >"$output"
+}
+
+inventory_local_heads "$snapshot_repo" refs/maintain/local/ 3 "$local_heads"
 inventory_open_pr_heads "$open_pr_heads"
 
 upstream_main_sha=$(git --git-dir="$snapshot_repo" rev-parse refs/maintain/upstream/main)
@@ -426,15 +478,15 @@ fork_main_sha=$(lookup_sha "$remote_heads" "$main_branch") \
     || die "$fork_remote/$main_branch is missing"
 integration_sha=$(lookup_sha "$remote_heads" "$integration_branch") \
     || die "$fork_remote/$integration_branch is missing"
-local_integration_sha=$(git -C "$checkout" rev-parse \
-    "refs/heads/$integration_branch" 2>/dev/null) \
+local_integration_sha=$(git --git-dir="$snapshot_repo" rev-parse --verify \
+    "refs/maintain/local/$integration_branch" 2>/dev/null) \
     || die "local $integration_branch is missing"
 [ "$local_integration_sha" = "$integration_sha" ] \
     || die "local $integration_branch does not match $fork_remote/$integration_branch; bind the published branch first"
 
-if git -C "$checkout" rev-parse --verify --quiet \
-    "refs/heads/$main_branch" >/dev/null; then
-    local_main_sha=$(git -C "$checkout" rev-parse "refs/heads/$main_branch")
+if git --git-dir="$snapshot_repo" rev-parse --verify --quiet \
+    "refs/maintain/local/$main_branch" >/dev/null; then
+    local_main_sha=$(git --git-dir="$snapshot_repo" rev-parse "refs/maintain/local/$main_branch")
     git --git-dir="$snapshot_repo" merge-base --is-ancestor \
         "$local_main_sha" "$upstream_main_sha" \
         || die "local $main_branch has commits outside $upstream_remote/$main_branch"
@@ -510,6 +562,10 @@ fi
 inventory_open_pr_heads "$open_pr_heads_recheck"
 cmp -s "$open_pr_heads" "$open_pr_heads_recheck" \
     || die "open pull-request heads changed since planning; rerun"
+local_git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir)
+inventory_local_heads "$local_git_dir" refs/heads/ 2 "$local_heads_recheck"
+cmp -s "$local_heads" "$local_heads_recheck" \
+    || die "local maintenance heads changed since planning; rerun"
 
 leases=("--force-with-lease=refs/heads/$main_branch:$fork_main_sha")
 leases+=("--force-with-lease=refs/heads/$integration_branch:$integration_sha")
@@ -525,7 +581,7 @@ while IFS=$'\t' read -r branch sha; do
     refspecs+=("$sha:refs/heads/$branch")
 done <"$local_carries"
 git --git-dir="$snapshot_repo" push --quiet --atomic \
-    "${leases[@]}" "$fork_url" "${refspecs[@]}" \
+    "${leases[@]}" "$fork_push_url" "${refspecs[@]}" \
     || die "could not atomically apply the fork branch policy"
 
 git -C "$checkout" fetch --quiet --no-tags "$snapshot_repo" \
