@@ -62,5 +62,3 @@ On approval, build the sketch.
 <!-- extension-prompt: SYSTEM.md -->
 
 <!-- extension-prompt: GUIDELINES.md -->
-
-<!-- extension-prompt: TOOLS.md -->

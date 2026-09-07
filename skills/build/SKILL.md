@@ -66,5 +66,3 @@ steering; never solicit or wait for it.
 <!-- extension-prompt: SYSTEM.md -->
 
 <!-- extension-prompt: GUIDELINES.md -->
-
-<!-- extension-prompt: TOOLS.md -->

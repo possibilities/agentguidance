@@ -446,5 +446,3 @@ completion report.
 <!-- extension-prompt: SYSTEM.md -->
 
 <!-- extension-prompt: GUIDELINES.md -->
-
-<!-- extension-prompt: TOOLS.md -->

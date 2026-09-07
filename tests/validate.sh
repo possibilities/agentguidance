@@ -97,9 +97,9 @@ fi
 mkdir -p "$render_home/.config/agentguidance"
 printf '## System\n\nvalidate-system-extension\n' \
     >"$render_home/.config/agentguidance/SYSTEM.md"
-printf '## Guidelines\n\ngh gist create FILE --desc "…" --web\n\ngh gist view GIST_ID --web\n' \
+printf '## Guidelines\n\nvalidate-extension-splice\n\ngh gist create FILE --desc "…" --web\n\ngh gist view GIST_ID --web\n' \
     >"$render_home/.config/agentguidance/GUIDELINES.md"
-printf '## Tools\n\nvalidate-extension-splice\n' \
+printf '## Tools\n\nretired-tool-advertisement\n' \
     >"$render_home/.config/agentguidance/TOOLS.md"
 mkdir -p "$rendered_skills/retired-validate"
 printf '<!-- Rendered from %s/skills/retired-validate/SKILL.md — do not edit; change the template or extension prompts and re-run ~/code/agentstart/scripts/sync-skills. -->\nstale\n' \
@@ -149,6 +149,9 @@ fi
 # Claude from the same common pack.
 for guided_skill in build collab maintain; do
     rendered_guided_skill="$rendered_skills/$guided_skill/SKILL.md"
+    if grep -F 'retired-tool-advertisement' "$rendered_guided_skill" >/dev/null; then
+        fail "the rendered $guided_skill skill loaded the retired tool catalog"
+    fi
     grep -F 'gh gist create FILE --desc "…" --web' "$rendered_guided_skill" >/dev/null \
         || fail "the rendered $guided_skill skill omits Gist create-and-open guidance"
     grep -F 'gh gist view GIST_ID --web' "$rendered_guided_skill" >/dev/null \
