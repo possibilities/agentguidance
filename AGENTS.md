@@ -47,11 +47,12 @@ proven by `tests/branch-policy.sh`, and a workshop calls the installed copy
 through a thin entrypoint rather than copying it. Other fork heads are
 reported and left unchanged; `DELETEME/*` is explicit human state.
 
-A tool-specific runbook normally lives with its tool, but `notify` and
-`email` wrap `terminal-notifier` and `gog` — third-party binaries with no
-fleet repo to live in, so they live here. That is the whole exception; a
-runbook for a fleet tool still belongs in that tool's checkout. All resource
-skills are discovered through their names and descriptions.
+A tool-specific runbook normally lives with its tool. `notify` wraps the
+third-party `terminal-notifier`, and `email` uses authenticated Gmail
+connections through Executor; neither has a fleet tool checkout to own its
+workflow, so those skills live here. A runbook for a fleet tool belongs in
+that tool's checkout. All resource skills are discovered through their names
+and descriptions.
 
 `AGENTS.md` is the canonical guidance file; `CLAUDE.md` is a symlink to it.
 Run `tests/validate.sh` before committing.
