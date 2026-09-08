@@ -1,4 +1,4 @@
 interface:
   display_name: "Build"
-  short_description: "Execute a brief to done, stopping only to explain"
+  short_description: "Build autonomously, then seek approval to land"
   default_prompt: "Use $build with this brief."

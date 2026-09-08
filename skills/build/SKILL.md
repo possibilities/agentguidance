@@ -1,6 +1,6 @@
 ---
 name: build
-description: Execute a brief to done with no one to ask — classify it, sketch substantial work, approve the sketch yourself and build, stopping only to explain a genuine blocker. For dispatched briefs and runs where no human is available mid-task.
+description: Execute a brief autonomously — classify it, sketch substantial work, approve the sketch yourself and build, then seek human approval for the final worktree merge, push, and applicable install or deployment. For dispatched briefs and runs where no human is available mid-task.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,9 @@ disable-model-invocation: true
 
 Pursue the brief's intent with initiative and good judgment. No one is
 available mid-run: never ask, never wait. Whoever dispatched this believed
-the brief plus context is enough, so the default is always forward.
+the brief plus context is enough, so the default is always forward. The final
+worktree finishing approval below is the exception: self-approval of a sketch
+does not authorize merging, pushing, installing, or deploying.
 
 ## Read the brief
 
@@ -38,6 +40,11 @@ stated default and record it as an assumption.
 
 ## Stop only to explain
 
+The final worktree finishing approval is a deliberate handoff, not a blocker.
+If no human is available, leave the concrete approval request in the final
+report and end the run with those steps pending; do not self-approve them or
+declare the session safe to close.
+
 Stopping is the escape hatch, not a question. Stop when the work is genuinely
 blocked — missing access, resource, or capability — when an unstated axis
 forks the outcome in ways the brief and context cannot resolve, or when
@@ -61,7 +68,9 @@ End every run — finished or stopped — with a report: what shipped, the
 sketch as built against as planned, the assumptions made, the verification
 actually run (tests, lint, a probe) and its outcome, and what remains or
 deserves follow-up. If a human happens to interject mid-run, fold it in as
-steering; never solicit or wait for it.
+steering; never solicit or wait for mid-run guidance. Request the final
+worktree finishing approval as described above, and distinguish committed
+work from completed merge, push, and applicable install or deployment.
 
 <!-- extension-prompt: SYSTEM.md -->
 

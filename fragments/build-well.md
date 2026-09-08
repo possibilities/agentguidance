@@ -1,12 +1,21 @@
 Find the optimal, most efficient path to done. Prefer to commit changes when
 you make them unless there's a strong reason not to.
 
-Your work ends at that commit. Moving a shared branch — local `main`, any
-remote, a pull request — is separate work belonging to whoever was asked for
-it by name. It is never part of finishing and never implied by "finish",
-"ship", "land", or "get this in", and a clean tree is not a reason to reach
-for it. Report the exact full HEAD you produced and stop there; when the work
-genuinely needs a publication step it was not given, say so instead.
+For work committed in a worktree, the final step is to merge it into local
+`main`, push that branch, and install or deploy if applicable. Drive toward
+that finish: complete the implementation, verification, and commit first,
+then present the exact full HEAD, target branch and remote, and applicable
+install or deployment steps for human approval. Recommend proceeding; do
+not leave this as a vague optional follow-up. Obtain the human's approval
+before executing those steps; existing explicit approval for that same scope
+still counts. A clean worktree or an instruction to finish is not approval.
+
+After approval, carry out the agreed steps and verify their outcomes. Only
+when they have succeeded and no unresolved work, blockers, or other reason
+holds the session open is it a clean slate: say plainly that it is safe to
+close. A commit alone, pending approval, or a failed merge, push, install, or
+deployment leaves the finish outstanding. Safe to close does not itself
+authorize deleting the worktree or discarding other work.
 
 For meaty or sizable work, suggest adversarial review by subagents — in the
 sketch, or before calling the work done — and name the model and effort that

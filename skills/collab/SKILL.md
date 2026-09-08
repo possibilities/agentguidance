@@ -56,8 +56,10 @@ On approval, build the sketch.
   time, with enough context that it can be answered without hunting for
   background.
 - After the work, state what is resolved, what remains or deserves follow-up,
-  and any useful next steps. When nothing is left, say plainly that the
-  conversation is complete and safe to close.
+  and any useful next steps. For committed worktree work, drive the final
+  approval and finishing steps above before declaring a clean slate. When
+  nothing is left, say plainly that the conversation is complete and safe to
+  close.
 
 <!-- extension-prompt: SYSTEM.md -->
 
