@@ -1,448 +1,67 @@
 ---
 name: maintain
-description: Run one maintenance cycle of a fork the machine carries, from its workshop repository — bind one upstream snapshot, reconcile every behavior the workshop's MAINTAIN.md requires, gate a candidate, publish the integration branch under a lease, hand it to its consumer, and record the state. Use for /maintain or "maintain the <project> fork" from a workshop checkout; installation without maintenance is the workshop's own consumer step, not this.
+description: Run one maintenance cycle of a fork the machine carries, from its workshop repository — bind one upstream snapshot, reconcile every behavior the workshop's MAINTAIN.md requires, gate a candidate, publish the integration branch under a lease, hand it to its consumer, and record the state. Use for /maintain or a request to maintain a named fork from a workshop checkout; installation without maintenance is the workshop's own consumer step, not this.
 disable-model-invocation: true
 ---
 
 # Maintain a fork
 
-A workshop repository owns one fork of someone else's project: the behavior
-the fork must carry, the way it is kept current on upstream, and the state
-between cycles. This skill is the operating procedure for one cycle of that
-work. It knows how a cycle goes; it knows nothing about the project. Every
-project fact — the checkout, the remotes, the branch names, the gate, who
-consumes the result — comes from the workshop's `MAINTAIN.md`, read at the
-start and never assumed.
+Run one maintenance cycle of the fork declared by the workshop's
+`MAINTAIN.md`. Read that specification and the
+[full cycle procedure](references/fork-maintenance.md) before fetching,
+reconciling refs, repairing a feature, or publishing a candidate. Resolve
+script paths from this skill's directory and use the workshop's declared
+entrypoints; all project facts come from the workshop.
 
-Treat ordinary reconciliation, feature repair, gating, publication, and the
-hand-over as the authorized work of a `/maintain` invocation. Ask the human
-only when an upstream change creates a consequential product choice that the
-spec and the existing implementation do not resolve.
+A `/maintain` invocation authorizes its ordinary reconciliation, feature
+repair, gates, publication, and consumer handover within the workshop's
+existing scope. Honor narrower user constraints and prior authorization.
+A consequential product choice unresolved by the spec or implementation
+needs a human decision; complete independent preparation before that handoff.
 
-## The workshop
+## Follow one captured cycle
 
-Three files, one job each:
+1. Establish clean workshop and bound-checkout state and inventory existing
+   worktrees. Read the workshop and fork guidance. Capture the fork heads for
+   exact publication leases, then one immutable upstream target.
+2. Fetch exactly that upstream object once. Read the full interval since the
+   audited frontier, and assign every carried behavior a retire, repair, or
+   unchanged disposition. A clean replay or merged request is not proof of
+   semantic coverage or retirement.
+3. Make repairs and compose a candidate in owned worktrees. Preserve the
+   bound checkout, previous publication, unrelated heads, and consumer
+   binding. Follow the declared carry or linear model.
+4. Gate the exact committed candidate using every required command and any
+   required external proof. Publish the mirror, Integration, and current
+   carries together in one atomic push with the starting leases. Re-read the
+   complete graph before the workshop's consumer step; never retry a race
+   with freshly captured leases.
+5. Verify the consumer, reconcile the published branch model, and update the
+   scratchpad. Advance the audited frontier only after a complete audit.
+   Clean up only owned, clean cycle worktrees with no live process using them.
 
-- `MAINTAIN.md` — the specification: what the fork is for, the upstream it
-  tracks and how we relate to it, the branch model, the feature inventory
-  that must remain true, the gate, the consumer, and how to notify. This is
-  the contract the cycle executes.
-- `SCRATCHPAD.md` — current state: the delivered upstream and integration
-  baseline, the separately named audited-upstream frontier, one entry per
-  carried feature, notes that can change a later decision, and a compact dated
-  history. Updated during the cycle, never a second specification or an
-  unbounded transcript. Delivery work may advance the first baseline; only a
-  complete maintenance audit advances the frontier.
-- `scripts/` — the workshop's thin entrypoints: `reconcile-branches.sh`
-  exporting the declared branch model into this skill's shared script, the
-  gate runner, and the consumer command.
+The reference contains the fixed spec sections, supervised branch model,
+exact-object fetch, atomic publication recipe, upstream-offer rules, and
+report requirements. Missing declarations or required proof are an explicit
+incomplete gate, not a reason to improvise a broader publication scope.
 
-`MAINTAIN.md` has fixed sections, and the cycle reads each by name:
+## Preserve boundaries
 
-| Section | What it declares |
-| --- | --- |
-| `## Purpose` | What the fork is for and what it is not. |
-| `## Upstream` | The bound checkout, the `fork` and upstream remotes with their repositories, the upstream's contribution conventions and what they mean for us, what we offer upstream and how "landed" is recognized. |
-| `## Branch model` | The mirror branch, the integration branch, the composition model — `carry/<feature>` heads composed onto upstream, or one linear stack rebased whole — the explicit deletion-marker prefix, whether open pull-request heads are validated, and whether rerere is relied on. |
-| `## Features` | The inventory: every behavior the fork must carry, as behavior, with its scope line. Absence is work, never a status note. |
-| `## Gate` | The exact commands, fenced, run verbatim from the candidate worktree, and any external proof (hosted CI, a ship gate) the publication requires. |
-| `## Consumer` | Who consumes the published integration branch and the command that hands it over — an installer, a pin, a rebuild. |
-| `## Notify` | The notification title and group. |
+Upstream requests and historical heads are evidence. Do not mutate their
+branches, comments, or status as incidental maintenance. Read the offer rules
+before preparing a contribution; communication still needs authorization.
+Use native harness delegation only as allowed by the active role.
 
-A workshop whose spec lacks a section has not said what the cycle should
-do there; stop and say so rather than improvise.
+If a rebase, review, gate, publication, or consumer check fails, report the
+exact failure and the state that remains in place. Keep useful evidence and
+owned work needed for recovery. Never claim successful delivery from a green
+local gate when a required publication or consumer check is still pending.
 
-## The declared model as data
+## Close the cycle
 
-<!-- fragment: fork-supervision.md -->
-
-Converge supervision whenever the declared model changes, and expect
-`--check-supervision` to pass at the end of a cycle: an advisory tool reading
-a stale trunk would propose lifecycle work against the wrong branch.
-
-## Invariants
-
-These hold for every workshop, whatever its spec says:
-
-- The bound checkout is where the fork lives, not where work happens. Every
-  feature repair and every integration candidate is built in its own
-  worktree. Never leave the bound checkout dirty or mid-rebase.
-- Local and fork mirror branches are kept at the exact upstream commit and
-  never hold downstream-only work. The integration branch is the only thing
-  a consumer builds from and is nobody's review context.
-- Capture all fork heads before the first fetch of the cycle. Use those exact
-  values as publication leases for the mirror, Integration, and every current
-  carry; a new carry's lease requires absence. Never replace a starting lease
-  with a tip observed after a fetch or just before the push.
-- Capture the upstream mirror tip beside that lease and use it as the cycle's
-  immutable upstream target. Fetch exactly that object once, never a moving
-  upstream ref or the remote's configured refspec, then never refetch, reselect,
-  rebase onto, gate against, or publish a later upstream tip during the same
-  invocation. Upstream movement after capture belongs to the next maintenance
-  invocation, even when it occurs before the current cycle gates or publishes.
-- The exact-object fetch is the upstream provenance boundary. Do not infer
-  provenance afterward from ambient remote-tracking refs or their reflogs: they
-  are mutable, incomplete evidence and may contain work outside this cycle.
-- Gate and publish an exact commit, never an ambient branch name.
-- The previously published integration tip and the consumer's binding stay
-  intact until the new candidate has passed its gate; a failed rebase,
-  build, test, review, CI run, or gate publishes nothing and hands nothing
-  over.
-- Upstream pull requests, issues, and their branches are evidence only —
-  never live dependencies, publication targets, or work queues — and the
-  cycle never mutates them. When the spec says so, reconciliation validates
-  an open request's exact head while it remains open; closing it does not
-  authorize changing or deleting the branch.
-- Reconciliation owns only the refs the workshop declares: the mirror, the
-  integration branch, and current carry heads under the carry model. Every
-  other fork head is left unchanged. A `DELETEME/<original>` head records an
-  explicit human decision about that branch; maintenance reports it but never
-  creates, moves, or removes it implicitly. `reconcile-branches.sh --check` is
-  read-only and works from a disposable snapshot; `--apply` repairs an already
-  published composition in one atomic, exact-leased push. It requires local
-  and remote Integration to agree, so it cannot publish a new candidate.
-- Publish the mirror, exact candidate Integration, and every declared carry
-  together in one atomic push after the gate. Integration-first publication
-  followed by carry reconciliation exposes a graph that never passed the gate.
-  A no-op Integration refspec is not a serialization lock: Git can omit
-  up-to-date refs from the server transaction. Re-read the complete published
-  graph before hand-over; never infer its state from a successful no-op push.
-- Carried work must be an ancestor of the published integration branch —
-  every carry head under the carry model, every stack commit under the
-  linear model.
-- A recorded rerere resolution, where the spec relies on rerere, is
-  evidence, not proof: after upstream changes, reread the affected behavior
-  before accepting it.
-- The audited-upstream frontier is not the upstream commit underlying the
-  currently delivered Integration branch. Feature work between maintenance
-  cycles may replay and publish the fork on newer upstream, but that does not
-  prove every intervening upstream commit was considered as a replacement for
-  every carried feature. Never advance the frontier from a feature delivery,
-  a clean replay, or a green gate.
-- Pinned reconciliation runs again after the hand-over so the mirror and
-  declared carry heads agree with the completed cycle. Temporary or obsolete
-  branches remain until a human explicitly decides their disposition.
-
-## Establish the state
-
-1. Read the workshop's `AGENTS.md`, `CONTEXT.md`, `MAINTAIN.md`, and
-   `SCRATCHPAD.md`. Read the bound checkout's own `AGENTS.md` completely
-   before touching the project.
-2. Confirm the workshop is clean on its main branch. Confirm the bound
-   checkout is clean and its remotes are the ones `## Upstream` names.
-   Inventory `git worktree list --porcelain` before creating cycle
-   worktrees, so cleanup can tell the bound checkout, unrelated active
-   worktrees, and this cycle's own apart. Resolve the checkout, remotes and
-   branch names from the declared model; upstream is not always named
-   `upstream`. Before fetching, retain one fork-head snapshot in cycle-owned
-   state, then capture the upstream mirror tip this invocation will maintain:
-
-   ```sh
-   cycle_state=$(mktemp -d "${TMPDIR:-/tmp}/maintain-cycle.XXXXXX")
-   cycle_fork_heads="$cycle_state/fork-heads"
-   git -C "$checkout" ls-remote --heads "$fork_remote" >"$cycle_fork_heads" || exit 1
-   starting_integration_sha=$(
-     awk -v ref="refs/heads/$integration_branch" \
-       '$2 == ref { print $1; found = 1 } END { exit !found }' "$cycle_fork_heads"
-   ) || exit 1
-   starting_mirror_sha=$(
-     awk -v ref="refs/heads/$mirror_branch" \
-       '$2 == ref { print $1; found = 1 } END { exit !found }' "$cycle_fork_heads"
-   ) || exit 1
-   for starting_sha in "$starting_integration_sha" "$starting_mirror_sha"; do
-     printf '%s\n' "$starting_sha" | grep -Eq '^[0-9a-f]{40}$' || exit 1
-   done
-   cycle_upstream_sha=$(
-     git -C "$checkout" ls-remote --exit-code --heads "$upstream_remote" \
-       "refs/heads/$mirror_branch" | awk 'NR == 1 { print $1 }'
-   ) || exit 1
-   printf '%s\n' "$cycle_upstream_sha" |
-     grep -Eq '^[0-9a-f]{40}$' || exit 1
-   ```
-
-3. Fetch the captured upstream object once, without fetching any moving
-   upstream ref or configured upstream refspec. Fetch the fork separately.
-   Do not fetch upstream again during this invocation. Reconcile the branch
-   namespace before feature work, pinned to the captured upstream target.
-   Inspect the whole plan through the workshop's entrypoint; leave ref changes
-   for the gated publication:
-
-   ```sh
-   git -C "$checkout" fetch --no-tags "$upstream_remote" "$cycle_upstream_sha"
-   git -C "$checkout" fetch --no-tags "$fork_remote"
-   MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
-     scripts/reconcile-branches.sh --check
-   ```
-
-   The upstream fetch writes the captured object to `FETCH_HEAD`; it does not
-   update or populate upstream remote-tracking refs. A later upstream Main or
-   topic head must not enter the cycle through this fetch. The read-only plan
-   checks the published baseline; do not run `--apply` before the gate or use
-   a later reconciliation snapshot to replace the captured publication leases.
-
-   Stop on any divergence, a missing or moved validated head, a carry outside
-   integration, a lease failure, or an unexpected remote identity.
-4. Read two distinct facts from the scratchpad: the
-   delivered baseline, which says what the consumer currently runs, and the
-   audited-upstream frontier, which is the exact upstream commit through which
-   the last complete maintenance audit assigned every carried feature a
-   disposition. Set the audit interval from that frontier to the captured
-   upstream target,
-   even when some or all of those commits are already in Integration because
-   intervening feature work replayed the fork. Read every upstream commit in
-   that aggregate interval and group related changes before judging features.
-   Build the human-facing upstream summary from those groups as the audit
-   proceeds: describe capabilities, fixes, removals, and migrations rather
-   than dumping commit subjects. Capture stable changelog, release-note,
-   compare, or commit links when the upstream provides them; pin links to the
-   audited range rather than ambient HEAD.
-   If an older scratchpad does not name a frontier separately, reconstruct it
-   from the last completed maintenance entry and repository history; do not
-   silently substitute the newer delivered baseline. Record the migration.
-5. For each carried feature, inspect the captured upstream code and any
-   historical upstream reference in the scratchpad, then assign exactly one disposition:
-   retire because upstream now satisfies the contract; repair because the
-   feature remains carried but upstream interacts with it; or keep unchanged
-   because upstream neither replaces nor affects it. A replay or conflict list
-   is not this semantic review. Keep the disposition ledger until the
-   scratchpad and final report carry its result. Separately assess whether the
-   upstream change alters our stance toward the behavior: it may complement or
-   simplify a carry without replacing it, narrow the remaining downstream
-   contract, make the carry redundant, increase its maintenance cost, or create
-   a consequential product choice. A repair disposition does not imply that
-   the stance stayed the same. Evidence only: do not rebase or push historical
-   branches, or comment on, label, close, or edit requests.
-
-## Reconcile the fork
-
-- Walk every feature in `## Features`; absence is work.
-- Prefer an upstream implementation when it fully satisfies the required
-  behavior. Retire carried work only after reading the upstream code and
-  exercising its path — never because a request merged or closed. Where
-  `## Upstream` says the maintainer lands contributions by rewriting them
-  onto their main, "landed" is decided by that reading alone.
-- Under the carry model: repair or add each absent or incomplete behavior on
-  its own `carry/<feature>` branch in its own worktree, based on the captured
-  upstream target; compose only committed, reviewed carry heads into a scratch
-  integration candidate, in dependency order. Under the linear model: rebase
-  the stack as a whole onto the captured upstream target in a scratch worktree,
-  repairing commits in place and keeping each commit's subject as the feature
-  marker the inventory refers to.
-- When upstream changes code a carried patch calls, reread that interaction
-  even when Git reports a clean rebase. Accept a rerere resolution only after
-  the same semantic review.
-- For a substantial repair, conflict resolution, or cross-cutting change,
-  obtain an independent adversarial review when another agent is available.
-  Adversarial review means subagents told to refute the work, on a model
-  and at an effort that fit it: a strong model at high effort for subtle
-  correctness, a cheaper one at low effort for a mechanical sweep. Repair
-  every concrete finding or record why it does not apply.
-- Never merge upstream into the previously published integration history and
-  never force-update it in place while reconciling; the candidate is a new
-  history on the captured upstream target, and the leased rewrite is expected.
-
-## Gate and publish
-
-Before gating, freeze the full ref name and exact commit of each current
-carry in `$cycle_state/carries.tsv`, one tab-separated pair per line, and
-check that this set equals `## Features`. Use an empty file for a linear
-stack. Every carry must be committed and included in the candidate; neither
-uncommitted inventory changes nor ambient carry branches define a release.
-
-From the candidate worktree, run `## Gate` verbatim — every command, in
-order — then focused checks for every changed feature, exercising each
-changed happy path with that worktree's freshly built binary. Where the
-spec requires external proof (hosted CI for the exact SHA, a ship-gate
-script), push the exact candidate commit to a newly named temporary branch
-on the fork, without touching the integration branch or any preserved
-head, and obtain that proof for that SHA. A stale, partial, skipped,
-cancelled, or merely local result is not proof.
-
-After the gate, re-read the fork heads and reject a change to any publication
-target since the starting snapshot. Build the transaction only from that
-snapshot, the frozen carry manifest, and the exact gated commit:
-
-```sh
-publication_leases=(
-  "--force-with-lease=refs/heads/$mirror_branch:$starting_mirror_sha"
-  "--force-with-lease=refs/heads/$integration_branch:$starting_integration_sha"
-)
-publication_refs=(
-  "$cycle_upstream_sha:refs/heads/$mirror_branch"
-  "$candidate_sha:refs/heads/$integration_branch"
-)
-while IFS=$'\t' read -r carry_ref carry_sha; do
-  [ -n "$carry_ref" ] || continue
-  git -C "$candidate_worktree" merge-base --is-ancestor "$carry_sha" "$candidate_sha" || exit 1
-  starting_carry_sha=$(awk -v ref="$carry_ref" '$2 == ref { print $1 }' "$cycle_fork_heads")
-  publication_leases+=("--force-with-lease=$carry_ref:$starting_carry_sha")
-  publication_refs+=("$carry_sha:$carry_ref")
-done <"$cycle_state/carries.tsv"
-git -C "$candidate_worktree" push --atomic "${publication_leases[@]}" \
-  "$fork_remote" "${publication_refs[@]}"
-```
-
-Use the fork's verified push URL when it differs from its fetch transport;
-both must identify the declared repository. There is no non-atomic fallback.
-An older workshop whose publication scope excludes a required mirror or carry
-update needs that policy resolved before shipping; this skill does not broaden
-its authorization. Re-read every published target and require its exact
-intended SHA before invoking the consumer. If a concurrent writer changed it,
-retain the gate evidence and report the conflict instead of installing or
-recapturing leases for a blind retry.
-
-If rebase, gate, or publication fails, leave the previous integration branch
-and the consumer's binding in place. Report the exact failed gate and retain
-a useful worktree when it is needed for follow-up.
-
-## Hand over
-
-After the leased push succeeds, run `## Consumer` — the workshop's own
-command, which may bind the bound checkout to the published commit,
-rebuild and install a binary, or move a pin in a consuming repository. Only
-that command binds anything. Then reconcile the namespace again to repair
-local mirror and tracking state, and check:
-
-```sh
-MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
-  scripts/reconcile-branches.sh --check
-MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
-  scripts/reconcile-branches.sh --apply
-MAINTAIN_UPSTREAM_SHA="$cycle_upstream_sha" \
-  scripts/reconcile-branches.sh --check
-```
-
-This is consistency repair, never deferred publication of newly gated carries.
-If it proposes changing the remote graph just handed over, stop and inspect the
-drift before applying it. The final check reports the mirror, Integration,
-current carries, validated open-request heads, explicit `DELETEME/*` markers,
-and every other untouched fork head. Do not infer that an unrecognized head is obsolete.
-
-## Offers
-
-An offer made during maintenance is a fresh branch cut from the cycle's
-captured upstream target and written as upstream would write it, with no
-workshop-specific concept in it — never a carry head or stack commit moved
-across. The carried patch and the offered patch share a behavior, not a
-history. `## Upstream` says what is offered and how landing is recognized.
-
-Nothing offered is pushed unreviewed. Before the branch that opens a pull
-request goes up, and before any follow-up commit answering review, the
-work gets adversarial review by subagents: independent reviewers told to
-refute it — wrong behavior, a missed race, a regression, poor upstream fit.
-Say which model and effort fit the task: a strong model at high effort for
-subtle correctness on a small diff, a cheaper one at low effort for a
-mechanical sweep. Findings are fixed first; the push comes after.
-
-Every message sent to upstream — opening the request, its body, comments,
-replies to reviewers — is approved by the human first. Two things are
-autonomous: responding to a review with code changes when the required
-change is clear, and, once that is settled and the commits are pushed, a
-recap comment of the form "I responded with commits for X; for Y I did Z
-because W. Ready for another look." Everything else waits for approval.
-
-The branch is pushed to the fork when its request opens, and from then on
-it is an open-request head, preserved as `## Branch model` says. The cycle
-does not tend open offers. When the spec's reading says an offer has landed,
-the matching carried work is retired at the next
-cycle — by reading the upstream code, as `## Reconcile the fork` requires,
-never because the request closed.
-
-## Maintain the scratchpad
-
-Update `SCRATCHPAD.md` during the cycle, not as an afterthought:
-
-- replace the delivered baseline with the exact upstream and integration SHAs,
-  and whatever the consumer recorded (a receipt, a pin);
-- keep a separately named audited-upstream frontier with its exact SHA and
-  completion date. Advance it only after every commit since the prior frontier
-  was read and every carried feature received a disposition; an incomplete
-  audit leaves the old frontier intact even if delivery moved;
-- keep one current entry per carried feature: where it lives (carry head or
-  stack commits), its exact integration commit, the historical upstream
-  reference or verified replacement, the verification evidence, and its
-  retirement condition;
-- keep noteworthy upstream replacement opportunities without tracking
-  request review health or implying the workshop maintains those requests;
-- retain rerere or conflict context only while it can change a later
-  decision;
-- remove superseded state and append one compact dated history entry. For a
-  completed audit, include the aggregate upstream range, commit count, notable
-  releases or capabilities, stable upstream detail links when available, the
-  retire/repair/unchanged disposition totals plus any non-unchanged features,
-  and every material change in stance toward a carried behavior;
-- record the final branch reconciliation; list an explicit `DELETEME/*` marker
-  only when it affects maintenance.
-
-Do not duplicate the spec's feature inventory, paste command logs, or store
-secrets. Commit and push scratchpad changes on the workshop's main branch
-after the fork and consumer state they describe are real.
-
-## Notify and close
-
-An interesting new upstream capability, a blocked gate, or a product
-decision needing the human gets both a transcript report and a macOS
-notification when `terminal-notifier` is available, with the title and
-group `## Notify` declares:
-
-```sh
-terminal-notifier -title "<title>" -message "<concise outcome>" -group "<group>"
-```
-
-After a successful hand-over and scratchpad publication, confirm no live
-process uses a cycle-owned worktree, then remove only the clean worktrees this
-cycle created; keep their branches and exact commits available for the next
-reconciliation, and never remove an unrelated or pre-existing worktree in
-passing.
-
-Every invocation ends with a self-contained, human-facing completion report
-in the final transcript response, whether the cycle shipped, made no changes,
-or stopped blocked. A scratchpad commit, notification, machine receipt, or
-agent-to-agent handoff does not replace this report. Lead with the outcome,
-then use these sections in plain language. Never omit a section because its
-answer is empty; say `None` or `No material change` explicitly.
-
-- **Outcome.** Say successful, no-op, or blocked. Name the delivered upstream,
-  Integration, and consumer identity; for a blocked cycle, say explicitly
-  that the prior publication and consumer binding were retained.
-- **Upstream reviewed.** Give the aggregate audited range and commit count,
-  and summarize meaningful user-facing, internal, and carry-relevant change
-  groups inline. Link authoritative changelog or release notes when they cover
-  the interval, and link the exact compare range or commits when the hosting
-  provider permits. Say explicitly when there was no upstream delta or no
-  authoritative link. A changelog supplements rather than replaces reading
-  the interval, and a raw commit list does not stand in for the summary.
-- **Fork accommodations.** Name each carried behavior that changed because of
-  upstream, the interaction that required it, the adaptation, the observable
-  behavior retained, and focused proof. Distinguish semantic repairs from
-  clean replays or mechanical conflict resolution, and say `None beyond
-  replay` when true. Put unrelated defects discovered by review or gating in
-  follow-ups rather than presenting them as upstream accommodations.
-- **Stance and carry impact.** State `Material stance changed` or `No
-  material stance change`, give the retire/repair/unchanged totals and every
-  non-unchanged feature, and explain whether upstream left each relevant carry
-  necessary as-is, complemented or simplified it, narrowed its remaining
-  scope, made it redundant or retired, increased its maintenance cost, or
-  exposed a product decision. Call out corresponding `MAINTAIN.md` contract
-  changes, new retirement or upstream-offer opportunities, and decisions still
-  owed by the human. Never infer redundancy merely from a merged or closed
-  upstream request.
-- **Evidence and attention.** Report the published Integration identity,
-  consumer result, meaningful gate and focused-check evidence, scratchpad
-  commit and new audited frontier, nonblocking proof still running, residual
-  risks or follow-ups, retained cycle worktrees or explicit deletion markers,
-  and anything deliberately left for the human.
-
-Keep the report proportional to the cycle and readable before presenting
-low-level evidence. A compact table is useful when several carries changed.
-Put exhaustive SHA graphs, leases, file inventories, and command receipts
-after the readable report or behind a durable link when they are needed; do
-not make the human reconstruct the outcome from them. Report the aggregate
-range from the prior audited frontier even when intervening feature work had
-already delivered its endpoint; never summarize only the final zero-delta
-repair. A quiet cycle may omit the macOS notification, but never the
-completion report.
-
-<!-- extension-prompt: SYSTEM.md -->
-
-<!-- extension-prompt: GUIDELINES.md -->
+Always give a self-contained report: outcome, upstream reviewed, changed fork
+accommodations, stance and carry impact, and evidence or remaining attention.
+Use the [report contract](references/fork-maintenance.md#notify-and-close),
+including explicit no-change results. Keep exact hashes and receipts in
+written evidence; follow the active role's speech conventions. A machine
+receipt, notification, or worker handoff does not replace the human report.

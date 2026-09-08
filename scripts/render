@@ -143,6 +143,20 @@ function spliceDetail(spliced, absent) {
     .join("; ");
 }
 
+// References can share the same doctrine and machine prompts as the entry
+// skill without eagerly loading the full implementation or lifecycle guide.
+function renderMarkdownSiblings(sourceDir, targetDir) {
+  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+    const source = join(sourceDir, entry.name);
+    const target = join(targetDir, entry.name);
+    if (entry.isDirectory()) renderMarkdownSiblings(source, target);
+    else if (entry.isFile() && entry.name.endsWith(".md") && entry.name !== "SKILL.md") {
+      const { rendered } = renderTemplate(source);
+      writeFileSync(target, rendered);
+    }
+  }
+}
+
 for (const skill of skills) {
   const templatePath = join(skillsRoot, skill, "SKILL.md");
   const { rendered, spliced, absent } = renderTemplate(templatePath);
@@ -157,6 +171,7 @@ for (const skill of skills) {
     });
   }
   writeFileSync(join(target, "SKILL.md"), rendered);
+  renderMarkdownSiblings(join(skillsRoot, skill), target);
   chmodFilesReadOnly(target);
 
   const detail = spliceDetail(spliced, absent);

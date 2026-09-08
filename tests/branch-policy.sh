@@ -642,8 +642,10 @@ printf 'refs/heads/carry/alpha\t%s\nrefs/heads/carry/new\t%s\n' \
     printf 'set -euo pipefail\n'
     awk '/^publication_leases=\(/ { inside = 1 }
          inside && /^```/ { exit }
-         inside { print }' "$root/skills/maintain/SKILL.md"
+         inside { print }' "$root/skills/maintain/references/fork-maintenance.md"
 } >"$test_root/publish.sh"
+grep -F 'push --atomic' "$test_root/publish.sh" >/dev/null \
+    || fail "documented publication recipe is missing from the reference"
 run_publication_recipe() {
     cycle_state="$publication_cycle" \
     cycle_fork_heads="$publication_cycle/fork-heads" \

@@ -1,77 +1,47 @@
 ---
 name: build
-description: Execute a brief autonomously — classify it, sketch substantial work, approve the sketch yourself and build, then seek human approval for the final worktree merge, push, and applicable install or deployment. For dispatched briefs and runs where no human is available mid-task.
+description: Execute a dispatched brief through investigation, implementation, verification, and authorized delivery; make routine choices from context and leave concrete handoffs for unresolved decisions. Use when explicitly asked for the build workflow or assigned an unattended brief.
 disable-model-invocation: true
 ---
 
 # Build
 
-Pursue the brief's intent with initiative and good judgment. No one is
-available mid-run: never ask, never wait. Whoever dispatched this believed
-the brief plus context is enough, so the default is always forward. The final
-worktree finishing approval below is the exception: self-approval of a sketch
-does not authorize merging, pushing, installing, or deploying.
+Carry a dispatched brief through to a verified result. Use the brief, project
+context, and active role to make routine decisions without requiring a human
+at each step.
 
 ## Read the brief
 
 <!-- fragment: read-the-request.md -->
 
-When two readings would produce meaningfully different work, take the one the
-brief's purpose favors and record the choice as an assumption. Reserve
-stopping for forks the brief and context genuinely cannot resolve.
+Choose the interpretation best supported by the brief and record assumptions
+that affect the outcome. A short sketch helps substantial work; write it and
+proceed when the direction is already authorized. Self-review is not a new
+source of authority for actions outside the brief.
 
-## Answer or build
+## Execute and verify
 
-- **Question, report, or research** — produce the answer in the shape the
-  kind calls for; that is the deliverable.
-- **Small work** — state the concrete change in a sentence, then do it,
-  recording any assumption inline.
-- **Substantial work** — write the sketch first and emit it at the top of the
-  run's output, then approve it yourself and build immediately. Never wait on
-  the sketch: it exists so the thinking happens before the changes, and so
-  the dispatcher can later read what was intended next to what was done.
+<!-- fragment: working-scope.md -->
 
-<!-- fragment: sketch-contract.md -->
+Read [Building and delivery](references/building-and-delivery.md) before
+software implementation or delivery. It provides the planning format,
+shared-checkout rules, domain conventions, and operator preferences. Carry
+out the applicable checks and authorized finishing steps.
 
-Open decisions in a self-approved sketch are resolved on the spot: take the
-stated default and record it as an assumption.
+If the human interjects, incorporate the message as steering. Do not reject
+useful clarification merely because the run began unattended. Follow the
+active role for worker assignments, communication, and delegation.
 
-<!-- fragment: build-well.md -->
+## Report a result or a concrete handoff
 
-## Stop only to explain
+When missing access or an unresolved consequential decision prevents an
+action, finish independent authorized preparation and report exactly what is
+needed. If no human is available, leave that concrete handoff pending; do not
+invent an answer or approval. A missing final approval need not stop earlier
+implementation, review, or verification.
 
-The final worktree finishing approval is a deliberate handoff, not a blocker.
-If no human is available, leave the concrete approval request in the final
-report and end the run with those steps pending; do not self-approve them or
-declare the session safe to close.
-
-Stopping is the escape hatch, not a question. Stop when the work is genuinely
-blocked — missing access, resource, or capability — when an unstated axis
-forks the outcome in ways the brief and context cannot resolve, or when
-proceeding would be destructive or hard to reverse under that ambiguity. A
-stop is a report: what blocked the work, what was considered, what was
-completed and left safe, and the default you would take if re-dispatched with
-one more sentence of guidance.
-
-## Domain model
-
-<!-- fragment: domain-model.md -->
-
-- When the brief's words conflict with the glossary, or one word is doing two
-  jobs, resolve it in the glossary's favor and record the assumption; a term
-  the work needs that the glossary lacks gets a provisional entry the report
-  calls out.
-
-## Report and end
-
-End every run — finished or stopped — with a report: what shipped, the
-sketch as built against as planned, the assumptions made, the verification
-actually run (tests, lint, a probe) and its outcome, and what remains or
-deserves follow-up. If a human happens to interject mid-run, fold it in as
-steering; never solicit or wait for mid-run guidance. Request the final
-worktree finishing approval as described above, and distinguish committed
-work from completed merge, push, and applicable install or deployment.
-
-<!-- extension-prompt: SYSTEM.md -->
-
-<!-- extension-prompt: GUIDELINES.md -->
+End with the result, material assumptions, verification actually run, and any
+remaining work. Distinguish a prepared commit from completed integration,
+installation, or publication. When assigned as a worker, report the bounded
+assignment to the coordinator; overall delivery and user communication stay
+with the active role's owner.

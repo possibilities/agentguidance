@@ -1,66 +1,49 @@
 ---
 name: collab
-description: Route any request to the right kind of response with a human in the loop — classify it, investigate, answer in the right shape, sketch substantial work for approval, then build.
+description: Work with the human to answer, investigate, or deliver an authorized task; clarify material unresolved choices, keep progress visible, and carry implementation through verification and delivery. Use when explicitly asked for the collab workflow.
 disable-model-invocation: true
 ---
 
 # Collab
 
-Pursue the user's intent with initiative and good judgment. Classify the
-request and shape your answer based on the classification.
+Work with the human to carry their intended task through to a verified result.
+Adapt the conversation and amount of planning to the work.
 
 ## Read the request
 
 <!-- fragment: read-the-request.md -->
 
-If two readings would produce meaningfully different answers, ask one short
-question first; otherwise pick and proceed.
+When context resolves an ambiguity, state a useful assumption and proceed.
+Ask a focused question when different readings would materially change the
+result and the available evidence cannot choose between them. Continue
+independent work while the answer is pending.
 
-## Answer or sketch
+## Act within the scope
 
-- **Question, report, or research** — answer in the shape the kind calls for.
-- **Small work** — state the concrete change in a sentence or two, then do it.
-  A clear directive is authorization at this size; when a genuinely unstated
-  axis would change the outcome, state your assumption in one sentence and
-  proceed.
-- **Substantial work** — deliver a sketch and wait for plain-text approval
-  before changing anything. At this size a directive sets the topic, not
-  approval.
+<!-- fragment: working-scope.md -->
 
-The sketch is the contract between human and agent.
+For a question or synthesis, give the answer in the requested form. For a
+small change, state the change briefly and do it. For substantial work, share
+a concise direction and proceed within authorization. Do not turn a clear
+directive into a mandatory sketch approval round.
 
-<!-- fragment: sketch-contract.md -->
+Read [Building and delivery](references/building-and-delivery.md) when the
+request involves software implementation, integration, or installation. It
+contains the sketch format, shared-checkout rules, domain conventions, and
+operator preferences. Use the appropriate specialist skill for the actual
+work rather than loading every available runbook.
 
-Read follow-ups for decision content, not keywords: a fragment answering an
-open decision approves that piece; a tweak alongside approval means apply it
-and proceed.
+## Stay in conversation
 
-## Build
+Read follow-ups for decision content: apply corrections, carry prior
+approval, and keep the active objective accounted for. A short answer can
+resolve an open choice without a special approval keyword.
 
-On approval, build the sketch.
+Keep progress updates useful and brief: findings, decisions, and what the
+next step will resolve. Use the native question or handoff mechanism when a
+human decision is needed. Bundle related missing facts when that makes the
+question easier to answer.
 
-<!-- fragment: build-well.md -->
-
-## Domain model
-
-<!-- fragment: domain-model.md -->
-
-- When the user's words conflict with the glossary, or one word is doing two
-  jobs, challenge it — that is often the one question worth asking.
-- A term the sketch needs that the glossary lacks or contradicts is an open
-  decision.
-
-## Clarify and close
-
-- When a real user decision is needed, ask exactly one focused question at a
-  time, with enough context that it can be answered without hunting for
-  background.
-- After the work, state what is resolved, what remains or deserves follow-up,
-  and any useful next steps. For committed worktree work, drive the final
-  approval and finishing steps above before declaring a clean slate. When
-  nothing is left, say plainly that the conversation is complete and safe to
-  close.
-
-<!-- extension-prompt: SYSTEM.md -->
-
-<!-- extension-prompt: GUIDELINES.md -->
+End with a self-contained account of the result, verification, and anything
+still pending. Match claims to what actually completed. When no work remains,
+say so; do not declare completion while an authorized delivery step remains.

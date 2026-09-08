@@ -11,6 +11,12 @@ over them, and fans the result out into the per-harness trees a session loads
 `scripts/render` by hand renders nothing — it refuses without an install root,
 because choosing its own would write a tree nobody reads.
 
+Render points work in `SKILL.md` and sibling Markdown references. Keep the
+entry skill focused on scope, decisions, and links; detailed software and
+lifecycle procedures belong in references and use the same shared fragments.
+The renderer stamps and makes those reference files read-only too. A missing
+fragment fails the render regardless of which Markdown file references it.
+
 Two kinds of render point, spliced by `scripts/render`:
 
 - `<!-- fragment: NAME.md -->` — repo-owned shared doctrine from

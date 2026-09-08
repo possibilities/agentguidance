@@ -1,31 +1,35 @@
-Find the optimal, most efficient path to done. Prefer to commit changes when
-you make them unless there's a strong reason not to.
+Choose an efficient path to the requested result. Inspect the finished diff,
+run the project's required checks and any focused verification the change
+needs, and commit when the task or repository workflow calls for it.
 
-For work committed in a worktree, the final step is to merge it into local
-`main`, push that branch, and install or deploy if applicable. Drive toward
-that finish: complete the implementation, verification, and commit first,
-then present the exact full HEAD, target branch and remote, and applicable
-install or deployment steps for human approval. Recommend proceeding; do
-not leave this as a vague optional follow-up. Obtain the human's approval
-before executing those steps; existing explicit approval for that same scope
-still counts. A clean worktree or an instruction to finish is not approval.
+Carry out integration, push, installation, deployment, and owned worktree
+cleanup when they are included in the user's instructions or established
+authorization. A request to land, ship, or deliver carries the finishing
+scope defined by the active role and project; do not ask for the same approval
+again. A generic code change does not automatically include every possible
+publication or restart. Follow supported installation ordering, and obtain
+separate current authorization for restarting an active app or call when the
+role or user requires it.
 
-After approval, carry out the agreed steps and verify their outcomes. Only
-when they have succeeded and no unresolved work, blockers, or other reason
-holds the session open is it a clean slate: say plainly that it is safe to
-close. A commit alone, pending approval, or a failed merge, push, install, or
-deployment leaves the finish outstanding. Safe to close does not itself
-authorize deleting the worktree or discarding other work.
+When a finishing action still lacks authority, prepare and validate the result
+first. Present the exact commit, target, destination, and applicable install
+or deployment steps in writing, then ask for that remaining decision. Do not
+leave preparation for after approval. Report what actually completed and any
+pending action; a commit alone is not proof of a successful installation.
+Keep opaque identifiers in technical receipts rather than reading them aloud.
 
-For meaty or sizable work, suggest adversarial review by subagents — in the
-sketch, or before calling the work done — and name the model and effort that
-fit: a strong model at high effort for subtle correctness on a small diff, a
-cheaper one at low effort for a mechanical sweep.
+Use bounded independent review when it would resolve meaningful risk and the
+active role permits delegation. Follow that role's model, effort, and worker
+ownership rules. Review is not a reason to launch unauthorized agents or to
+repeat a passing check without a new concern.
 
 Shared checkouts are concurrent state. Another session may be editing any
 checkout under `~/code`, including a canonical checkout that is not this
 session's worktree. Treat a dirty tree there as somebody else's live work:
-stop and report it; never clean, stash, or restore it for them.
+leave it intact and use an owned isolated worktree for this task when that is
+permitted. If the work actually depends on their changes, coordinate within
+the session's communication authority or report the dependency. Never clean,
+stash, or restore somebody else's work.
 
 Commands that replace working-tree state — including `git reset --hard`,
 `git revert --abort`, `git checkout -- .`, `git clean -fd`, and `git stash` —
@@ -53,11 +57,11 @@ open socket or file over a fresh process wherever the tool offers it.
 
 Reap what you start. Daemons designed to outlive their parent — a terminal
 multiplexer's session host, a PTY server, anything a test suite starts to
-prove processes survive — accumulate silently across repeated runs, because
-surviving is exactly what they are built to do. After a suite that starts
-them, list and kill what it left. Do not leave an agent parked on a prompt
-nobody will answer, holding its processes open while you work on something
-else.
+prove processes survive — can accumulate across repeated runs. Track owned
+processes and sessions, then stop only those the test started, using their
+supported cleanup. Do not kill by a broad process-name match or stop someone
+else's session. Keep a needed approval handoff visible and release disposable
+test resources when the check is finished.
 
 `fork failed: resource temporarily unavailable`, `EAGAIN`, and
 `Resource temporarily unavailable` mean the limit is already reached. Stop

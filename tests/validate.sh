@@ -30,9 +30,9 @@ tests/branch-policy.sh
 # upstream fetch would import a later Main or topic and defeat one-shot scope.
 # shellcheck disable=SC2016 # Match the literal documented shell variables.
 grep -F 'git -C "$checkout" fetch --no-tags "$upstream_remote" "$cycle_upstream_sha"' \
-    skills/maintain/SKILL.md >/dev/null \
+    skills/maintain/references/fork-maintenance.md >/dev/null \
     || fail "maintain does not fetch the exact captured upstream object"
-if grep -Eq 'fetch --no-tags upstream[[:space:]]*$' skills/maintain/SKILL.md; then
+if grep -Eq 'fetch --no-tags upstream[[:space:]]*$' skills/maintain/references/fork-maintenance.md; then
     fail "maintain still documents a broad moving upstream fetch"
 fi
 
@@ -114,7 +114,7 @@ grep -F "Rendered from $root/skills/collab/SKILL.md" "$rendered" >/dev/null \
 if grep -E '<!-- (fragment|extension-prompt):' "$rendered" >/dev/null; then
     fail "the rendered skill still contains raw render points"
 fi
-grep -F 'validate-extension-splice' "$rendered" >/dev/null \
+grep -F 'validate-extension-splice' "$rendered_skills/collab/references/building-and-delivery.md" >/dev/null \
     || fail "the render did not splice a present extension prompt"
 [ ! -w "$rendered" ] || fail "the rendered skill is not read-only"
 [ -f "$rendered_skills/collab/agents/openai.yaml" ] \
@@ -125,7 +125,7 @@ grep -F 'validate-extension-splice' "$rendered" >/dev/null \
 # A maintenance run's machine receipt and notification do not replace its
 # human closeout. Assert the required report shape on the rendered product,
 # including the explicit no-change path, and reject the former silence rule.
-rendered_maintain="$rendered_skills/maintain/SKILL.md"
+rendered_maintain="$rendered_skills/maintain/references/fork-maintenance.md"
 for report_section in \
     '**Outcome.**' \
     '**Upstream reviewed.**' \
@@ -148,7 +148,11 @@ fi
 # skill that consumes GUIDELINES.md; those skills are projected to Codex and
 # Claude from the same common pack.
 for guided_skill in build collab maintain; do
-    rendered_guided_skill="$rendered_skills/$guided_skill/SKILL.md"
+    case "$guided_skill" in
+        maintain) reference=fork-maintenance.md ;;
+        *) reference=building-and-delivery.md ;;
+    esac
+    rendered_guided_skill="$rendered_skills/$guided_skill/references/$reference"
     if grep -F 'retired-tool-advertisement' "$rendered_guided_skill" >/dev/null; then
         fail "the rendered $guided_skill skill loaded the retired tool catalog"
     fi
@@ -161,7 +165,7 @@ done
 # Shared-checkout safety is build doctrine, not a harness-specific warning.
 # It must render identically into both human-loop and unattended workers.
 for worker in collab build; do
-    rendered_worker="$rendered_skills/$worker/SKILL.md"
+    rendered_worker="$rendered_skills/$worker/references/building-and-delivery.md"
     grep -F 'Shared checkouts are concurrent state.' "$rendered_worker" >/dev/null \
         || fail "the rendered $worker skill is missing shared-checkout safety"
     grep -F 'git reset --hard' "$rendered_worker" >/dev/null \
@@ -169,5 +173,36 @@ for worker in collab build; do
     grep -F 'git apply -R --check' "$rendered_worker" >/dev/null \
         || fail "the rendered $worker skill omits the read-only reverse probe"
 done
+
+# Progressive references are rendered products too: shared fragments and
+# extension prompts must resolve, ship read-only, and retain their provenance.
+for reference in \
+    collab/references/building-and-delivery.md \
+    build/references/building-and-delivery.md \
+    maintain/references/fork-maintenance.md \
+    tend/references/survey-and-lifecycle.md
+do
+    rendered_reference="$rendered_skills/$reference"
+    [ -f "$rendered_reference" ] || fail "missing rendered reference: $reference"
+    [ ! -w "$rendered_reference" ] || fail "reference is not read-only: $reference"
+    grep -F "Rendered from $root/skills/$reference" "$rendered_reference" >/dev/null \
+        || fail "reference has no source provenance: $reference"
+    if grep -E '<!-- (fragment|extension-prompt):' "$rendered_reference" >/dev/null; then
+        fail "reference still contains raw render points: $reference"
+    fi
+done
+
+# A missing fragment must also fail when it is referenced only by a detail
+# file. Exercise the actual renderer from a disposable source checkout.
+fixture_source="$render_home/source"
+mkdir -p "$fixture_source/scripts"
+cp scripts/render "$fixture_source/scripts/render"
+cp -R skills fragments "$fixture_source/"
+printf '\n<!-- fragment: missing-reference-fixture.md -->\n' \
+    >>"$fixture_source/skills/collab/references/building-and-delivery.md"
+if HOME="$render_home" AGENTGUIDANCE_SKILLS_ROOT="$render_home/broken-skills" \
+    "$fixture_source/scripts/render" >/dev/null 2>&1; then
+    fail "a missing reference-only fragment did not fail the render"
+fi
 
 printf 'ok\n'

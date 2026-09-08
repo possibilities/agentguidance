@@ -7,10 +7,17 @@ get a short ADR in `docs/adr/NNNN-slug.md`: a title plus one to three
 sentences, following the repo's own ADR convention if one already exists.
 Create either file lazily, when the first entry earns it.
 
-- Read the glossary before investigating; use its canonical terms in
+- Read an existing glossary when investigating the project's domain; use its canonical terms in
   everything you write — sketches, code, names, summaries.
 - When the stated domain and the code disagree, quote the code back and treat
   the difference as real: one of them is wrong, and changing either without
   noticing is how drift compounds.
 - Update `CONTEXT.md` the moment a term is resolved — not in a batch at the
   end.
+
+A missing term is usually an implementation choice, not a mandatory question.
+Use established code and context to resolve it, and record a provisional term
+when useful. Ask only when competing meanings imply materially different
+behavior that the task and project cannot resolve. Follow the repository's
+existing documentation convention instead of creating a glossary for an
+unrelated small edit.
