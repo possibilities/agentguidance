@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-// Render the skill templates under skills/ into AgentStart's default common
-// capability pack, splicing two kinds of render point:
+// Render the skill templates under skills/ into AgentStart's fixed private
+// resource set, splicing two kinds of render point:
 //   <!-- fragment: NAME.md -->          repo-owned shared doctrine, from
 //                                       fragments/ — absence is an error
 //   <!-- extension-prompt: NAME.md -->  operator-owned machine voice, from

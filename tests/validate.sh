@@ -99,11 +99,9 @@ printf '## System\n\nvalidate-system-extension\n' \
     >"$render_home/.config/agentguidance/SYSTEM.md"
 printf '## Guidelines\n\nvalidate-extension-splice\n\ngh gist create FILE --desc "…" --web\n\ngh gist view GIST_ID --web\n' \
     >"$render_home/.config/agentguidance/GUIDELINES.md"
-printf '## Tools\n\nretired-tool-advertisement\n' \
-    >"$render_home/.config/agentguidance/TOOLS.md"
-mkdir -p "$rendered_skills/retired-validate"
-printf '<!-- Rendered from %s/skills/retired-validate/SKILL.md — do not edit; change the template or extension prompts and re-run ~/code/agentstart/scripts/sync-skills. -->\nstale\n' \
-    "$root" >"$rendered_skills/retired-validate/SKILL.md"
+mkdir -p "$rendered_skills/stale-validate"
+printf '<!-- Rendered from %s/skills/stale-validate/SKILL.md — do not edit; change the template or extension prompts and re-run ~/code/agentstart/scripts/sync-skills. -->\nstale\n' \
+    "$root" >"$rendered_skills/stale-validate/SKILL.md"
 HOME="$render_home" AGENTGUIDANCE_SKILLS_ROOT="$rendered_skills" scripts/render >/dev/null \
     || fail "the render failed against a fixture HOME"
 
@@ -119,8 +117,8 @@ grep -F 'validate-extension-splice' "$rendered_skills/collab/references/building
 [ ! -w "$rendered" ] || fail "the rendered skill is not read-only"
 [ -f "$rendered_skills/collab/agents/openai.yaml" ] \
     || fail "the render did not ship the skill's sibling files"
-[ ! -e "$rendered_skills/retired-validate" ] \
-    || fail "the render did not prune a retired skill it once produced"
+[ ! -e "$rendered_skills/stale-validate" ] \
+    || fail "the render did not prune a stale generated skill"
 
 # A maintenance run's machine receipt and notification do not replace its
 # human closeout. Assert the required report shape on the rendered product,
@@ -145,17 +143,14 @@ if grep -F 'Silence is appropriate' "$rendered_maintain" >/dev/null; then
 fi
 
 # Operator publication guidance must survive the shared render into every
-# skill that consumes GUIDELINES.md; those skills are projected to Codex and
-# Claude from the same common pack.
+# skill that consumes GUIDELINES.md; those skills are shipped to Codex and
+# Claude from the same fixed resource set.
 for guided_skill in build collab maintain; do
     case "$guided_skill" in
         maintain) reference=fork-maintenance.md ;;
         *) reference=building-and-delivery.md ;;
     esac
     rendered_guided_skill="$rendered_skills/$guided_skill/references/$reference"
-    if grep -F 'retired-tool-advertisement' "$rendered_guided_skill" >/dev/null; then
-        fail "the rendered $guided_skill skill loaded the retired tool catalog"
-    fi
     grep -F 'gh gist create FILE --desc "…" --web' "$rendered_guided_skill" >/dev/null \
         || fail "the rendered $guided_skill skill omits Gist create-and-open guidance"
     grep -F 'gh gist view GIST_ID --web' "$rendered_guided_skill" >/dev/null \

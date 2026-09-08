@@ -2,9 +2,9 @@
 
 **Extension prompt** — a Markdown file with a recognized name under
 `~/.config/agentguidance/` that `scripts/render` splices into a skill template
-at its matching render point (an HTML comment naming the file). `SYSTEM.md`,
-`GUIDELINES.md`, and `TOOLS.md` are the recognized names; an absent file
-renders to nothing. The files are the operator's, linked there by AgentStart.
+at its matching render point (an HTML comment naming the file). `SYSTEM.md`
+and `GUIDELINES.md` are the recognized names; an absent file renders to
+nothing. The files are the operator's, linked there by AgentStart.
 _Avoid_: extension guidance, plugin, override.
 
 **Fragment** — a Markdown file under `fragments/` that `scripts/render`
@@ -40,7 +40,7 @@ _Avoid_: defer, snooze, shelve, skip.
 **Model invocation policy** — the portable fact recorded by
 `disable-model-invocation` in a skill template's `SKILL.md` frontmatter;
 absent or false means model-invocable. AgentStart derives Codex's inverse
-product field when it renders the common capability pack.
+product field when it renders the fixed private resource set.
 _Avoid_: OpenAI policy (that is a rendered representation, not source).
 
 **Surface** — the shared runtime coding-agent sessions are placed on and run
