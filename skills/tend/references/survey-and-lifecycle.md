@@ -433,8 +433,8 @@ rather than executed. Verify per worktree, not per survey.
 worktree from somewhere else never appears as its owner, so when a proposal is
 downgraded — or when anything nearby is churning — ask the owner rather than
 inferring one. Address by session id, not by name:
-load `bus` and discover the Surface `agents` and `message` MCP tools through
-Executor. Supply explicit caller identity, inspect the live listing, and
+load `bus` and select `agents` and `message` from the direct `agentsurface`
+MCP server. Supply explicit caller identity, inspect the live listing, and
 address the exact session ID. Send an ownership question only when this
 session has authority to contact that peer. Do not guess a recipient from a
 similar name or treat silence as proof that nobody owns the worktree.

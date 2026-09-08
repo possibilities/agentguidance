@@ -54,8 +54,8 @@ through a thin entrypoint rather than copying it. Other fork heads are
 reported and left unchanged; `DELETEME/*` is explicit human state.
 
 A tool-specific runbook normally lives with its tool. `notify` wraps the
-third-party `terminal-notifier`, and `email` uses authenticated Gmail
-connections through Executor; neither has a fleet tool checkout to own its
+third-party `terminal-notifier`, and `email` uses Gog's authenticated Google
+MCP and CLI; neither has a fleet tool checkout to own its
 workflow, so those skills live here. A runbook for a fleet tool belongs in
 that tool's checkout. All resource skills are discovered through their names
 and descriptions.
