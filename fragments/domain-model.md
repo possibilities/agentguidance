@@ -1,23 +1,32 @@
-The project's language lives in `CONTEXT.md` at the repo root — a glossary and
-nothing else. Each entry: **Term**, one or two sentences on what it *is*,
-rejected synonyms under `_Avoid_`. (If `CONTEXT-MAP.md` exists, terms go in the
-per-context glossary it points to.) Decisions that are hard to reverse,
-surprising without context, and the result of a real trade-off — all three —
-get a short ADR in `docs/adr/NNNN-slug.md`: a title plus one to three
-sentences, following the repo's own ADR convention if one already exists.
-Create either file lazily, when the first entry earns it.
+Read the repository's applicable `AGENTS.md`, existing glossary, and relevant
+ADRs when investigating its domain. When delegating, give workers the exact
+target repository and include that reading in their assignment; their starting
+workspace may be elsewhere. Carry the resulting constraints into the work.
 
-- Read an existing glossary when investigating the project's domain; use its canonical terms in
-  everything you write — sketches, code, names, summaries.
-- When the stated domain and the code disagree, quote the code back and treat
-  the difference as real: one of them is wrong, and changing either without
-  noticing is how drift compounds.
-- Update `CONTEXT.md` the moment a term is resolved — not in a batch at the
-  end.
+The project's language lives in `CONTEXT.md` at the repo root: a glossary.
+Each entry has a **Term**, one or two sentences on what it means, and rejected
+synonyms under `_Avoid_`. If `CONTEXT-MAP.md` exists, terms go in the per-context
+glossary it points to. Keep plans, progress reports, and conversation history
+in working notes. Use canonical terms in sketches, assignments, code, names,
+and summaries; update the glossary when a term is resolved.
+
+Important decisions whose rationale or tradeoffs a future maintainer would
+otherwise need to rediscover get a concise ADR in `docs/adr/NNNN-slug.md`.
+Explain the choice, reason, and material consequences, following the repo's
+own ADR convention. Use enough detail to make the decision understandable,
+linking supporting material when useful. A reversible decision can still
+have lasting rationale. Supersede changed decisions explicitly, link their
+replacements, and preserve their original reasoning even after the associated
+code is removed.
+
+When code and documentation disagree, identify the concrete evidence and
+resolve the discrepancy within the task's scope. During parallel work, assign
+ownership of shared glossary and ADR edits. Workers report needed updates;
+the coordinator ensures they are integrated with the result.
 
 A missing term is usually an implementation choice, not a mandatory question.
 Use established code and context to resolve it, and record a provisional term
 when useful. Ask only when competing meanings imply materially different
 behavior that the task and project cannot resolve. Follow the repository's
-existing documentation convention instead of creating a glossary for an
-unrelated small edit.
+existing documentation convention. Create glossaries and ADRs lazily, when
+the first useful entry earns them; an unrelated small edit needs neither.
