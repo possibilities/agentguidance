@@ -1,17 +1,30 @@
 ---
 name: maintain
-description: Run one maintenance cycle of a fork the machine carries, from its workshop repository — bind one upstream snapshot, reconcile every behavior the workshop's MAINTAIN.md requires, gate a candidate, publish the integration branch under a lease, hand it to its consumer, and record the state. Use for /maintain or a request to maintain a named fork from a workshop checkout; installation without maintenance is the workshop's own consumer step, not this.
+description: Run one maintenance cycle of a fork from its workshop repository — bind one upstream snapshot, reconcile required behavior, gate and publish under the declared branch model, hand over to the consumer, and record the state. Use for bare /maintain in a workshop or a request to maintain a named fork; installation without maintenance is the workshop's consumer step, not this.
 disable-model-invocation: true
 ---
 
 # Maintain a fork
 
-Run one maintenance cycle of the fork declared by the workshop's
-`MAINTAIN.md`. Read that specification and the
+With no arguments, use the current repository as the workshop and read its
+`AGENTS.md`, `CONTEXT.md`, `MAINTAIN.md`, and `SCRATCHPAD.md`. The human does
+not need to repeat its name, branch model, or exceptions in the invocation.
+An explicitly named workshop changes the target, not the procedure.
+
+Run one maintenance cycle of the fork declared by that workshop. Read the
+specification and the
 [full cycle procedure](references/fork-maintenance.md) before fetching,
 reconciling refs, repairing a feature, or publishing a candidate. Resolve
 script paths from this skill's directory and use the workshop's declared
 entrypoints; all project facts come from the workshop.
+
+Select the composition model from `MAINTAIN.md` before running any branch
+command. Carry heads and rebased linear stacks use the shared branch script
+through their workshop entrypoint. An explicitly declared merge-only history
+uses [merge-only maintenance](references/merge-only-maintenance.md) and its
+workshop's own branch procedure. It may name an existing public branch for the
+integration role and declare no owned mirror. Never send that model through
+the shared rewrite/mirror script or ask the human to repeat the declaration.
 
 A `/maintain` invocation authorizes its ordinary reconciliation, feature
 repair, gates, publication, and consumer handover within the workshop's
@@ -30,12 +43,13 @@ needs a human decision; complete independent preparation before that handoff.
    semantic coverage or retirement.
 3. Make repairs and compose a candidate in owned worktrees. Preserve the
    bound checkout, previous publication, unrelated heads, and consumer
-   binding. Follow the declared carry or linear model.
+   binding. Follow the declared carry, linear, or merge-only model.
 4. Gate the exact committed candidate using every required command and any
-   required external proof. Publish the mirror, Integration, and current
-   carries together in one atomic push with the starting leases. Re-read the
-   complete graph before the workshop's consumer step; never retry a race
-   with freshly captured leases.
+   required external proof. Publish only declared refs using the selected
+   model: one atomic leased transaction for rebased mirror/Integration/carry
+   refs, or the workshop's history-preserving publication for merge-only.
+   Re-read the published graph before the consumer step; never retry a race
+   with freshly captured starting state.
 5. Verify the consumer, reconcile the published branch model, and update the
    scratchpad. Advance the audited frontier only after a complete audit.
    Clean up only owned, clean cycle worktrees with no live process using them.

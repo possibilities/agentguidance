@@ -1,7 +1,8 @@
-A repository the machine carries as a fork does not answer to `main`. Its
-mirror branch tracks upstream exactly, its integration branch is what a
-consumer builds, and its carried features live under a declared prefix. A
-tool that assumes otherwise reads a landed carry head as finished work.
+A repository the machine carries as a fork answers to its declared integration
+branch, whose literal name comes from the workshop. Owned mirrors track
+upstream exactly; carries use only the declared prefixes or exact heads.
+A merge-only workshop may own no mirror or separate carry heads. A tool that
+assumes every fork answers to `main` can misclassify maintained work as finished.
 
 That shape is declared once, in the workshop's
 `scripts/reconcile-branches.sh`, which exports what its `MAINTAIN.md`

@@ -1,4 +1,4 @@
 interface:
   display_name: "Maintain"
   short_description: "Run one maintenance cycle of a carried fork from its workshop"
-  default_prompt: "Use $maintain to run a maintenance cycle of this workshop's fork: reconcile upstream with MAINTAIN.md, gate, publish integration, and hand it to its consumer."
+  default_prompt: "Use $maintain in the current workshop: read MAINTAIN.md, follow its declared branch model, reconcile upstream, gate, publish the declared refs, and hand over to its consumer."

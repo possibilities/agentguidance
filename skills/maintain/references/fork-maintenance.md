@@ -8,6 +8,15 @@ project fact — the checkout, the remotes, the branch names, the gate, who
 consumes the result — comes from the workshop's `MAINTAIN.md`, read at the
 start and never assumed.
 
+Bare `/maintain` binds the current repository. Read its `MAINTAIN.md` and
+select its declared composition model before following branch mechanics.
+For carry heads or a rebased linear stack, use the procedure below. For an
+explicitly declared merge-only history, use
+[merge-only maintenance](merge-only-maintenance.md) for state establishment,
+branch reconciliation, publication, and handover; use this reference's
+semantic audit, offer, scratchpad, and report requirements in both models.
+An explicit workshop declaration supplies the choice without invocation flags.
+
 Treat ordinary reconciliation, feature repair, gating, publication, and the
 hand-over as the authorized work of a `/maintain` invocation. Ask the human
 only when an upstream change creates a consequential product choice that the
@@ -27,9 +36,9 @@ Three files, one job each:
   history. Updated during the cycle, never a second specification or an
   unbounded transcript. Delivery work may advance the first baseline; only a
   complete maintenance audit advances the frontier.
-- `scripts/` — the workshop's thin entrypoints: `reconcile-branches.sh`
-  exporting the declared branch model into this skill's shared script, the
-  gate runner, and the consumer command.
+- `scripts/` — the workshop's entrypoints: its branch checker, gate runner,
+  and consumer command. Rebased models delegate branch mechanics to the
+  shared script; merge-only workshops own their history-preserving procedure.
 
 `MAINTAIN.md` has fixed sections, and the cycle reads each by name:
 
@@ -37,7 +46,7 @@ Three files, one job each:
 | --- | --- |
 | `## Purpose` | What the fork is for and what it is not. |
 | `## Upstream` | The bound checkout, the `fork` and upstream remotes with their repositories, the upstream's contribution conventions and what they mean for us, what we offer upstream and how "landed" is recognized. |
-| `## Branch model` | The mirror branch, the integration branch, the composition model — `carry/<feature>` heads composed onto upstream, or one linear stack rebased whole — the explicit deletion-marker prefix, whether open pull-request heads are validated, and whether rerere is relied on. |
+| `## Branch model` | The owned mirror branch (or explicitly none for merge-only), the integration role's branch, the composition model — carry heads, a rebased linear stack, or merge-only history — the explicit deletion-marker prefix, whether open pull-request heads are validated, and whether rerere is relied on. |
 | `## Features` | The inventory: every behavior the fork must carry, as behavior, with its scope line. Absence is work, never a status note. |
 | `## Gate` | The exact commands, fenced, run verbatim from the candidate worktree, and any external proof (hosted CI, a ship gate) the publication requires. |
 | `## Consumer` | Who consumes the published integration branch and the command that hands it over — an installer, a pin, a rebuild. |
@@ -56,7 +65,9 @@ a stale trunk would propose lifecycle work against the wrong branch.
 
 ## Invariants
 
-These hold for every workshop, whatever its spec says:
+These govern the rebased carry and linear workflows below. Merge-only uses
+the corresponding branch invariants in its selected reference; the shared
+audit, exact-candidate gate, ownership, and reporting requirements still apply.
 
 - The bound checkout is where the fork lives, not where work happens. Every
   feature repair and every integration candidate is built in its own

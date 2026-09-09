@@ -175,6 +175,7 @@ for reference in \
     collab/references/building-and-delivery.md \
     build/references/building-and-delivery.md \
     maintain/references/fork-maintenance.md \
+    maintain/references/merge-only-maintenance.md \
     tend/references/survey-and-lifecycle.md
 do
     rendered_reference="$rendered_skills/$reference"
