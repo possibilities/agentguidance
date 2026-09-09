@@ -17,7 +17,10 @@ own ADR convention. Use enough detail to make the decision understandable,
 linking supporting material when useful. A reversible decision can still
 have lasting rationale. Supersede changed decisions explicitly, link their
 replacements, and preserve their original reasoning even after the associated
-code is removed.
+code is removed. Give each record a unique identifier; check the landing
+branch before assigning it, do not reuse a retired number for another choice,
+and cite complete relative file links. Keep a useful decision index in step
+with status changes without copying the rationale into it.
 
 When code and documentation disagree, identify the concrete evidence and
 resolve the discrepancy within the task's scope. During parallel work, assign

@@ -1,5 +1,9 @@
 # Agentguidance agent guidance
 
+Read [CONTEXT.md](CONTEXT.md) for the authored and rendered resource terms.
+[ADR 0001](docs/adr/0001-render-shared-doctrine-through-one-owner.md) explains
+fragment ownership and the one supported convergence path.
+
 Skill directories under `skills/` are templates. The installed copies under
 `~/.local/share/agentstart/resources/skills/` are rendered artifacts — never
 edit them. After changing any template, a fragment in `fragments/`, or an
