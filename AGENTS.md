@@ -59,11 +59,11 @@ select their own history-preserving branch procedure from `MAINTAIN.md`;
 bare `/maintain` resolves this without extra arguments. Other fork heads are
 reported and left unchanged; `DELETEME/*` is explicit human state.
 
-A tool-specific runbook normally lives with its tool. `notify` wraps the
-third-party `terminal-notifier`, and `email` uses Gog's authenticated Google
-MCP and CLI; neither has a fleet tool checkout to own its
-workflow, so those skills live here. A runbook for a fleet tool belongs in
-that tool's checkout. All resource skills are discovered through their names
+A tool-specific runbook normally lives with its tool. `notify` is the older
+entrypoint that now routes to AgentNotify's tool-owned `notifications` skill
+and the AgentStart terminal-notifier router. `email` uses Gog's authenticated
+Google MCP and CLI and has no fleet tool checkout to own its workflow.
+A runbook for a fleet tool belongs in that tool's checkout. All resource skills are discovered through their names
 and descriptions.
 
 `AGENTS.md` is the canonical guidance file; `CLAUDE.md` is a symlink to it.
