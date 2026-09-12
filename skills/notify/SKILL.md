@@ -1,6 +1,6 @@
 ---
 name: notify
-description: Reach the human with an AgentNotify notification, with the original terminal-notifier available when the inbox service is unavailable.
+description: Reach the human through AgentNotify's durable inbox or AgentStart's AgentNotify-only terminal-notifier router.
 ---
 
 # Notify
@@ -16,12 +16,12 @@ For an existing terminal-notifier caller, use AgentStart's installed router:
 ```
 
 The router checks AgentNotify before submitting, starts the inbox if needed,
-and preserves arguments, piped messages, responses, and exit status. If the
-service is unavailable, it invokes the original notifier, which stays installed.
-`AGENTSTART_TERMINAL_NOTIFIER_FALLBACK` can name an explicit fallback executable.
+and preserves arguments, piped messages, responses, and exit status. If
+AgentNotify remains unavailable, it exits 127 before submitting a notification;
+it never falls back to the original terminal-notifier.
 
-Do not retry a submitted notification through the original binary just because
-a banner is denied or a response times out: AgentNotify may already have saved
-it or recorded an answer. Diagnose with `agentnotify diagnose`; a denied banner
-still leaves a durable item. Sound is opt-in, and `-ignoreDnD` does not guarantee
-a Focus bypass. Write a short outcome or next step and use a task-specific group.
+Do not retry a submitted notification through another delivery path just because
+a response times out: AgentNotify may already have saved it or recorded an
+answer. Diagnose with `agentnotify diagnose`. AgentNotify's own arrival is the
+only presentation; legacy sound and `-ignoreDnD` inputs do not enable macOS
+banners. Write a short outcome or next step and use a task-specific group.
