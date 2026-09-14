@@ -18,7 +18,7 @@ worktrees are surveyed and tended within the human's scope. Entry skills stay
 short; linked references carry detailed procedures and operator preferences.
 The active role retains control of delegation and delivery authority.
 Tool-specific runbooks live
-with their tools — `agentboard` ships `board`, `agentwiki` ships `wiki`. This
+with their tools — `agenthud` ships `hud`, `agentwiki` ships `wiki`. This
 repo carries only the doctrine that applies everywhere.
 
 ## Install
