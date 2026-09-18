@@ -66,7 +66,7 @@ Google MCP and CLI and has no fleet tool checkout to own its workflow.
 A runbook for a fleet tool belongs in that tool's checkout. All resource skills are discovered through their names
 and descriptions.
 
-`AGENTS.md` is the canonical guidance file; `CLAUDE.md` is a symlink to it.
+`AGENTS.md` is the sole repository guidance entrypoint.
 Run `tests/validate.sh` before committing.
 
 ## The fleet
