@@ -70,8 +70,8 @@ bun test tests/tend.test.ts
 grep -F '/render' scripts/post-sync >/dev/null \
     || fail "the post-sync hook does not exec the renderer"
 [ -s LICENSE ] || fail "public repository is missing its LICENSE"
-[ ! -e CLAUDE.md ] && [ ! -L CLAUDE.md ] \
-    || fail "the retired root CLAUDE.md entrypoint must stay absent"
+[ -s AGENTS.md ] \
+    || fail "the repository guidance entrypoint is missing or empty: AGENTS.md"
 
 # Public-repo hygiene: nothing here may assume an account name.
 if grep -rn '/Users/' skills fragments prompts scripts README.md AGENTS.md CONTEXT.md 2>/dev/null; then
