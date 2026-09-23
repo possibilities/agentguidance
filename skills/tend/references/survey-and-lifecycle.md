@@ -374,12 +374,10 @@ leavings would be a false record in the one document that has to be
 trustworthy. A main-checkout park also records no recreate step, because the
 directory is the repository and never went anywhere.
 
-**Recreate before resuming, always.** `agentlaunch x-resume` returns a session
-to its recorded cwd only while that directory exists; when it does not, it
-falls back to the current working directory without saying so, and the agent
-comes back in whatever repository the command happened to be run from. That
-has been observed, not theorised. The recorded recipe is in the right order
-for this reason — follow it in that order.
+**Recreate before resuming, always.** Native resume starts in the shell's
+current directory. The recorded recipe recreates the worktree at its former
+path, then changes into it before running `claude --resume` or `codex resume`.
+Follow that order so the conversation returns to the expected checkout.
 
 **Every survey reads the document back.** A proposal whose worktree is parked
 carries the records in `parked`, counted in `counts.parked`. It is a list

@@ -115,9 +115,8 @@ export interface ParkRecord {
   reason: string;
   parked_at: string;
   /** The key. Absolute, and the path a recreated worktree must reoccupy:
-   * `agentlaunch x-resume` returns the session to its recorded cwd, so a
-   * worktree rebuilt anywhere else resumes the agent into a directory its
-   * conversation does not describe. */
+   * Native resume runs from this directory, so rebuild the worktree at the
+   * same path before resuming. */
   worktree: string;
   repository: string;
   branch: string | null;
@@ -1649,9 +1648,8 @@ function backticked(value: string | undefined): string[] {
 
 /** The recipe, as prose a human can follow and a shell can take verbatim.
  *
- * Recreating comes first because resuming lands the agent in its recorded cwd,
- * which is this worktree: resume before the directory exists and the agent
- * comes back somewhere its own conversation does not describe. The snapshot is
+ * Recreating comes first because native resume runs from this worktree.
+ * The snapshot is
  * laid down with read-tree rather than checkout so that files the agent had
  * deleted stay deleted, and the reset that follows returns them to being
  * uncommitted changes rather than a staged commit waiting to happen. */
@@ -1672,7 +1670,13 @@ export function unparkCommand(record: ParkRecord): string {
     steps.push(`recreate ${quoted(`${create}${restore}`)}`);
   }
   if (record.session) {
-    steps.push(`resume ${quoted(`agentlaunch x-resume ${record.session}`)}`);
+    const cwd = `'${record.worktree.replaceAll("'", "'\\''")}'`;
+    const native = record.harness === "codex"
+      ? `codex resume ${record.session}`
+      : record.harness === "claude"
+        ? `claude --resume ${record.session}`
+        : `# resume session ${record.session} with its native harness`;
+    steps.push(`resume ${quoted(`cd ${cwd} && ${native}`)}`);
   }
   if (steps.length === 0) steps.push(`open ${quoted(record.worktree)}`);
   return steps.join(", then ");

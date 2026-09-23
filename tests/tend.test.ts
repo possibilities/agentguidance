@@ -1621,7 +1621,7 @@ describe("Durable park", () => {
       snapshot_ref: null,
       snapshot_paths: 0,
     });
-    expect(record.unpark).toContain("agentlaunch x-resume sess-1");
+    expect(record.unpark).toContain("claude --resume sess-1");
     expect(git(worktree, "status", "--porcelain=v1")).toBe(before);
     expect(loadParked(file)).toEqual([record]);
   });
@@ -1919,7 +1919,7 @@ describe("Parking what is no longer there", () => {
       snapshot_ref: null,
     });
     expect(record.unpark).toContain(`worktree add ${worktree} reaped`);
-    expect(record.unpark).toContain("agentlaunch x-resume 01a0-abcd");
+    expect(record.unpark).toContain("codex resume 01a0-abcd");
     expect(loadParked(file)).toEqual([record]);
 
     // And the recorded recipe actually rebuilds it.
@@ -1963,7 +1963,7 @@ describe("Parking what is no longer there", () => {
     expect(record.snapshot_ref).toBeNull();
     // No worktree add: the directory is the repository and never went anywhere.
     expect(record.unpark).not.toContain("worktree add");
-    expect(record.unpark).toBe("resume `agentlaunch x-resume abcd-1234`");
+    expect(record.unpark).toBe(`resume \`cd '${repository}' && claude --resume abcd-1234\``);
     expect(git(repository, "status", "--porcelain=v1")).toContain("someone-elses.txt");
   });
 
