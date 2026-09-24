@@ -430,12 +430,10 @@ rather than executed. Verify per worktree, not per survey.
 **An absent agent row is not an absent owner.** An agent that drives a
 worktree from somewhere else never appears as its owner, so when a proposal is
 downgraded — or when anything nearby is churning — ask the owner rather than
-inferring one. Address by session id, not by name:
-load `bus` and select `agents` and `message` from the direct `agentsurface`
-MCP server. Supply explicit caller identity, inspect the live listing, and
-address the exact session ID. Send an ownership question only when this
-session has authority to contact that peer. Do not guess a recipient from a
-similar name or treat silence as proof that nobody owns the worktree.
+inferring one. Use an authorized native peer channel with a verified session
+identity when available; otherwise ask the human to resolve ownership. Do
+not guess a recipient from a similar name or treat silence as proof that
+nobody owns the worktree.
 The watcher's own CLI subprocesses remain its implementation contract;
 calling that shipped helper does not require translating its internals to MCP.
 
@@ -557,19 +555,13 @@ A parked proposal never wakes anyone: the human decided and wrote it down, so
 a machine whose every remaining proposal is parked goes quiet. That is the
 property that makes parking worth doing rather than skipping an item each run.
 
-`--wake-self` addresses this pane's current agent session through AgentSurface,
-so the same path works for Claude and Codex. The wake does not carry the survey
-inline: it writes the complete JSON to a file under the temp directory and the
-message names that path, because a survey of a machine with dozens of worktrees
-runs to tens of kilobytes and pasting that into the conversation on every
-change buries the human's own work in payload. Read the named file when the
-summary line says something worth reading; the watcher keeps the last few and
-prunes the rest. On a wake, run `bun scripts/watch.ts --once` again before
-notifying or writing the minisketch: an event is a reason to look, not a lease
-on state that may already have changed. When an event proposal's worktree and
-HEAD still match the refreshed proposal, preserve its `session_slug`; the
-one-shot query may no longer see the agent row from which the watcher retained
-that identity.
+If a watcher wake reaches this session, read its named survey file when the
+summary warrants it; the watcher keeps the last few and prunes the rest. Run
+`bun scripts/watch.ts --once` again before notifying or writing the
+minisketch: an event is a reason to look, not a lease on state that may already
+have changed. When an event proposal's worktree and HEAD still match the
+refreshed proposal, preserve its `session_slug`; the one-shot query may no
+longer see the agent row from which the watcher retained that identity.
 
 If the watcher reports that it cannot subscribe, cannot query ownership, or
 cannot address this session, diagnose that failure rather than replacing the

@@ -52,8 +52,9 @@ unconditional removal. Read the reference before overriding any downgrade.
 
 A missing agent row is not proof of absent ownership. A process, recent
 activity, ignored content, a protected fork branch, or incomplete evidence
-may reduce a proposal to `inspect`. Preserve those gates. Use the `bus` MCP
-workflow for authorized owner coordination and address a verified session ID.
+may reduce a proposal to `inspect`. Preserve those gates. Coordinate with
+the owner through available native controls or ask the human when no authorized
+peer channel exists. Do not infer absence from silence.
 
 Remove only an authorized, currently eligible registered worktree with
 `git worktree remove <exact path>` and no `--force`; retain its branch. Never
