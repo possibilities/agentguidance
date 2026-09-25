@@ -38,7 +38,7 @@ fi
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in build collab email maintain notify tend; do
+for skill in build collab email maintain notify; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
@@ -58,13 +58,9 @@ explicit_model_skills=$(
     done | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'
 )
 [ "$explicit_model_skills" = \
-    "build collab maintain tend" ] \
+    "build collab maintain" ] \
     || fail "explicit-only skill policy drifted: $explicit_model_skills"
 
-[ -x skills/tend/scripts/watch.ts ] \
-    || fail "the tend watcher is not executable"
-command -v bun >/dev/null 2>&1 || fail "bun is required to test tend"
-bun test tests/tend.test.ts
 [ -x scripts/render ] || fail "the renderer is not executable"
 [ -x scripts/post-sync ] || fail "the post-sync hook is not executable"
 grep -F '/render' scripts/post-sync >/dev/null \
@@ -175,8 +171,7 @@ for reference in \
     collab/references/building-and-delivery.md \
     build/references/building-and-delivery.md \
     maintain/references/fork-maintenance.md \
-    maintain/references/merge-only-maintenance.md \
-    tend/references/survey-and-lifecycle.md
+    maintain/references/merge-only-maintenance.md
 do
     rendered_reference="$rendered_skills/$reference"
     [ -f "$rendered_reference" ] || fail "missing rendered reference: $reference"

@@ -5,7 +5,7 @@
 [![CI](https://github.com/possibilities/agentguidance/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentguidance/actions/workflows/ci.yml)
 
 The general agent-guidance skills — `collab`, `build`, `email`, `maintain`,
-`notify`, and `tend` — and the system that composes them.
+and `notify` — and the system that composes them.
 
 Each skill and its Markdown references are templates. The renderer splices in shared doctrine from
 `fragments/` and the operator's own voice from `~/.config/agentguidance/`, then
@@ -13,8 +13,7 @@ writes the read-only artifacts every configured agent loads.
 
 These skills are the *general* layer of the agent\* fleet: how to read a
 request, when planning or clarification helps, how to deliver authorized work,
-how a carried fork is kept current from its workshop, and how inactive agent
-worktrees are surveyed and tended within the human's scope. Entry skills stay
+and how a carried fork is kept current from its workshop. Entry skills stay
 short; linked references carry detailed procedures and operator preferences.
 The active role retains control of delegation and delivery authority.
 Tool-specific runbooks live
