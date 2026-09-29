@@ -41,10 +41,32 @@ existing checkout. A new branch in a shared checkout is not isolation.
 
 Point edits, generators, builds, tests, and commits at the owned worktree;
 set tool paths and shell working directories explicitly, and move the harness
-session when supported. Give implementation workers their exact worktree and
-branch. “Land on main” means integrate verified commits as a finishing step,
-not develop there. Before updating the canonical checkout, recheck its branch
-and cleanliness and stop on concurrent changes.
+session when supported. “Land on main” means integrate verified commits as a
+finishing step, not develop there. Before updating the canonical checkout,
+recheck its branch and cleanliness and stop on concurrent changes.
+
+One writer per worktree applies across the whole agent tree. Before dispatching
+an editing child, the parent creates or verifies a separate worktree and unique
+task branch from an explicit committed base. Base dependent work on the parent's
+committed task state; uncommitted parent edits are not shared with the child.
+Start the child there using the native working-directory control when available,
+and include the exact path, branch, base commit, and return target in its brief.
+The child verifies its checkout before writing. Parent and siblings must not
+concurrently edit, generate files, or run mutating checks in the child's worktree.
+Read-only helpers need no separate worktree. Apply this recursively to authorized
+descendants; it does not expand the task's delegation authority.
+
+The parent owns integration. Children return commits, verification evidence,
+and remaining issues to their immediate parent and stop writing before
+integration. The parent reviews the result, merges or cherry-picks accepted
+commits into its own worktree by default, resolves conflicts there, and checks
+the combined result. Direct landing on the primary or integration branch is
+reserved for the parent that owns that authorized final integration; children
+must not independently race to land. Coordinate shared landing steps, recheck
+the target head, branch, and cleanliness immediately beforehand, and reconcile
+a moved target in the owned worktree rather than overwriting it. Track each
+child branch through integration or an explicit handoff. Remove only owned,
+no-longer-needed worktrees after child activity ends and the work is preserved.
 
 Shared checkouts are concurrent state. Leave others' changes intact. If the
 work depends on their changes, coordinate within the session's communication
