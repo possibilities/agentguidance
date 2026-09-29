@@ -23,13 +23,33 @@ active role permits delegation. Follow that role's model, effort, and worker
 ownership rules. Review is not a reason to launch unauthorized agents or to
 repeat a passing check without a new concern.
 
-Shared checkouts are concurrent state. Another session may be editing any
-checkout under `~/code`, including a canonical checkout that is not this
-session's worktree. Treat a dirty tree there as somebody else's live work:
-leave it intact and use an owned isolated worktree for this task when that is
-permitted. If the work actually depends on their changes, coordinate within
-the session's communication authority or report the dependency. Never clean,
-stash, or restore somebody else's work.
+Before the first repository edit, inspect the repository root, current branch,
+`git status --short`, and `git worktree list`. Author changes in a task-owned
+worktree on a task branch. Verify an assigned worktree's ownership and branch;
+otherwise create one from the current primary or declared integration branch
+using the active role's location and naming conventions. Refresh a previously
+delivered worktree from that base before reuse without discarding unrelated
+changes. Routine isolation needs no extra approval. If it is unavailable or
+ownership is unresolved, report the blocker before editing.
+
+This applies to small fixes, documentation, prompts, configuration, and
+generated files too. A clean canonical checkout and the session's starting
+directory do not establish exclusive ownership. Do not author in the canonical
+checkout or on `main`, `master`, or the declared integration branch unless the
+human explicitly directs that exception. Read-only investigation may use the
+existing checkout. A new branch in a shared checkout is not isolation.
+
+Point edits, generators, builds, tests, and commits at the owned worktree;
+set tool paths and shell working directories explicitly, and move the harness
+session when supported. Give implementation workers their exact worktree and
+branch. “Land on main” means integrate verified commits as a finishing step,
+not develop there. Before updating the canonical checkout, recheck its branch
+and cleanliness and stop on concurrent changes.
+
+Shared checkouts are concurrent state. Leave others' changes intact. If the
+work depends on their changes, coordinate within the session's communication
+authority or report the dependency. Never clean, stash, or restore somebody
+else's work.
 
 Commands that replace working-tree state — including `git reset --hard`,
 `git revert --abort`, `git checkout -- .`, `git clean -fd`, and `git stash` —
