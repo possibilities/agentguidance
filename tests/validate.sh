@@ -38,12 +38,19 @@ fi
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in build collab email maintain notify; do
+for skill in build collab email maintain notify retro; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
         || fail "skill manifest is missing: skills/$skill/agents/openai.yaml"
 done
+# The vendored retro remains attributable and explicit-only after rendering.
+[ -s skills/retro/LICENSE ] || fail "retro is missing its upstream license"
+grep -F '24fe0ef7737efae15c87225755e9f6f5965e4888' skills/retro/UPSTREAM.md >/dev/null \
+    || fail "retro is missing its pinned upstream source"
+grep -F 'disable-model-invocation: true' skills/retro/SKILL.md >/dev/null \
+    || fail "retro must remain user-invoked"
+
 # Model invocability is one portable fact in SKILL.md. AgentStart renders the
 # inverse OpenAI field into its copied common pack; keeping that product field
 # here would create the second source of truth this contract removes.
@@ -58,7 +65,7 @@ explicit_model_skills=$(
     done | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'
 )
 [ "$explicit_model_skills" = \
-    "build collab maintain" ] \
+    "build collab maintain retro" ] \
     || fail "explicit-only skill policy drifted: $explicit_model_skills"
 
 [ -x scripts/render ] || fail "the renderer is not executable"
