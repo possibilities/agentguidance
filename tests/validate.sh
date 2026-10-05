@@ -47,8 +47,9 @@ done
 # Complete upstream skills retain their attribution and license in the copied
 # resource tree as well as in this source checkout.
 for skill in domain-modeling writing-for-agents; do
-    [ -s "skills/$skill/LICENSE" ] && [ -s "skills/$skill/UPSTREAM.md" ] \
-        || fail "$skill is missing its source attribution or license"
+    if [ ! -s "skills/$skill/LICENSE" ] || [ ! -s "skills/$skill/UPSTREAM.md" ]; then
+        fail "$skill is missing its source attribution or license"
+    fi
 done
 # The vendored retro remains attributable and explicit-only after rendering.
 [ -s skills/retro/LICENSE ] || fail "retro is missing its upstream license"
