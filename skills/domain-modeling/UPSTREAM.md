@@ -8,3 +8,5 @@ The upstream project is MIT licensed; its notice is preserved in [LICENSE](LICEN
 
 The opening paragraph defers to an existing repository convention and makes
 this active skill complementary to AgentStart's default reading guidance.
+The conflict and context examples defer questions until code and scenarios
+leave a material ambiguity unresolved, matching the shared domain fragment.
