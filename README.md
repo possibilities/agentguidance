@@ -4,8 +4,9 @@
 
 [![CI](https://github.com/possibilities/agentguidance/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentguidance/actions/workflows/ci.yml)
 
-The general agent-guidance skills — `collab`, `build`, `email`, `maintain`,
-`notify`, and `retro` — and the system that composes them.
+The general agent-guidance skills — `collab`, `build`, `email`,
+`improve-codebase-architecture`, `maintain`, `notify`, `retro`, and
+`zero-tech-debt` — and the system that composes them.
 
 Each skill and its Markdown references are templates. The renderer splices in shared doctrine from
 `fragments/` and the operator's own voice from `~/.config/agentguidance/`, then

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Improve Codebase Architecture"
+  short_description: "Find and discuss architecture improvements"
+  default_prompt: "Use $improve-codebase-architecture to review a codebase and present architecture candidates."

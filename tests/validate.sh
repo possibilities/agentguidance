@@ -38,7 +38,7 @@ fi
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in build collab email maintain notify retro; do
+for skill in build collab email improve-codebase-architecture maintain notify retro zero-tech-debt; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
@@ -50,6 +50,23 @@ grep -F '24fe0ef7737efae15c87225755e9f6f5965e4888' skills/retro/UPSTREAM.md >/de
     || fail "retro is missing its pinned upstream source"
 grep -F 'disable-model-invocation: true' skills/retro/SKILL.md >/dev/null \
     || fail "retro must remain user-invoked"
+
+# The imported architecture skill keeps its source pin, license and explicit invocation.
+[ -s skills/improve-codebase-architecture/LICENSE ] \
+    || fail "architecture skill is missing its upstream license"
+grep -F '24fe0ef7737efae15c87225755e9f6f5965e4888' \
+    skills/improve-codebase-architecture/UPSTREAM.md >/dev/null \
+    || fail "architecture skill is missing its pinned upstream source"
+grep -F 'disable-model-invocation: true' \
+    skills/improve-codebase-architecture/SKILL.md >/dev/null \
+    || fail "architecture skill must remain user-invoked"
+
+# The unlicensed upstream skill is referenced at one immutable revision.
+grep -F '1bf05dcedaae03dcbfbe2621b5af8382c2bacb9c' \
+    skills/zero-tech-debt/SKILL.md >/dev/null \
+    || fail "zero-tech-debt is missing its pinned source"
+grep -F 'disable-model-invocation: true' skills/zero-tech-debt/SKILL.md >/dev/null \
+    || fail "zero-tech-debt must remain user-invoked"
 
 # Model invocability is one portable fact in SKILL.md. AgentStart renders the
 # inverse OpenAI field into its copied common pack; keeping that product field
@@ -65,7 +82,7 @@ explicit_model_skills=$(
     done | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'
 )
 [ "$explicit_model_skills" = \
-    "build collab maintain retro" ] \
+    "build collab improve-codebase-architecture maintain retro zero-tech-debt" ] \
     || fail "explicit-only skill policy drifted: $explicit_model_skills"
 
 [ -x scripts/render ] || fail "the renderer is not executable"
@@ -178,7 +195,8 @@ for reference in \
     collab/references/building-and-delivery.md \
     build/references/building-and-delivery.md \
     maintain/references/fork-maintenance.md \
-    maintain/references/merge-only-maintenance.md
+    maintain/references/merge-only-maintenance.md \
+    improve-codebase-architecture/HTML-REPORT.md
 do
     rendered_reference="$rendered_skills/$reference"
     [ -f "$rendered_reference" ] || fail "missing rendered reference: $reference"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Zero Tech Debt"
+  short_description: "Review a change from its intended end state"
+  default_prompt: "Use $zero-tech-debt to read the pinned source and review the requested change."
