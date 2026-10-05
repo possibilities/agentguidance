@@ -1,6 +1,6 @@
 # Agentguidance agent guidance
 
-Read [CONTEXT.md](CONTEXT.md) for the authored and rendered resource terms.
+Read [GLOSSARY.md](GLOSSARY.md) for the authored and rendered resource terms.
 [ADR 0001](docs/adr/0001-render-shared-doctrine-through-one-owner.md) explains
 fragment ownership and the one supported convergence path.
 
@@ -24,9 +24,8 @@ fragment fails the render regardless of which Markdown file references it.
 Two kinds of render point, spliced by `scripts/render`:
 
 - `<!-- fragment: NAME.md -->` — repo-owned shared doctrine from
-  `fragments/`, so the skills that share a spine (collab and build share
-  classification, the sketch contract, build norms, and the domain-model
-  discipline) cannot drift apart. A missing fragment fails the render.
+  `fragments/`. A missing fragment fails the render. The default AgentStart
+  role also incorporates `domain-model.md` into its installed prompt.
 - `<!-- extension-prompt: NAME.md -->` — operator-owned machine voice from
   `~/.config/agentguidance/` (linked there by AgentStart from its
   `prompts/agentguidance/`). An absent file renders to nothing.
@@ -45,9 +44,9 @@ never maintain that field in source.
 
 Retiring a skill is deleting its directory: the render prunes the installed
 copy it once produced (banner-matched, so other tools' skills are untouched).
-`collab` and `build` replaced `hack` — the same doctrine forked only on
-whether a human answers mid-run. Keep that fork honest: shared meaning
-belongs in a fragment, not copied into both templates.
+The default AgentStart role owns general collaboration and build behavior.
+Keep shared domain guidance in `fragments/domain-model.md` so the role and any
+specialist readers get the same vocabulary convention.
 
 `maintain` is doctrine for a kind of repository — a fork workshop such as
 `fxnk` or `zmax` — rather than for a tool, which is why it lives here; the
@@ -65,6 +64,12 @@ and the AgentStart terminal-notifier router. `email` uses Gog's authenticated
 Google MCP and CLI and has no fleet tool checkout to own its workflow.
 A runbook for a fleet tool belongs in that tool's checkout. All resource skills are discovered through their names
 and descriptions.
+
+`domain-modeling` and `writing-for-agents` are selected MIT-licensed skills
+adapted from Matt Pocock's v1.3 release. Keep their source pins and notices
+with each skill. The first supports active glossary and ADR work; the second
+supports writing guidance. Everyday glossary reading remains in the default
+role. Do not import the whole upstream catalog as a competing workflow.
 
 `AGENTS.md` is the sole repository guidance entrypoint.
 Run `tests/validate.sh` before committing.
@@ -85,5 +90,5 @@ lives in two siblings, and some changes here must cascade:
 - Adding or removing a call to another fleet tool changes the fleet map:
   update `~/code/agentstart/skills/fleet/MAP.md` (served by the `fleet`
   skill, every edge with evidence) in the same change.
-- General agent doctrine — collab, build, maintain, story, the resource
+- General agent doctrine — the default role, maintain, story, the resource
   skills — is `~/code/agentguidance`; tool-specific runbooks stay here.

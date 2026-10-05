@@ -38,11 +38,17 @@ fi
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in build collab email improve-codebase-architecture maintain notify retro zero-tech-debt; do
+for skill in domain-modeling email improve-codebase-architecture maintain notify retro writing-for-agents zero-tech-debt; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
         || fail "skill manifest is missing: skills/$skill/agents/openai.yaml"
+done
+# Complete upstream skills retain their attribution and license in the copied
+# resource tree as well as in this source checkout.
+for skill in domain-modeling writing-for-agents; do
+    [ -s "skills/$skill/LICENSE" ] && [ -s "skills/$skill/UPSTREAM.md" ] \
+        || fail "$skill is missing its source attribution or license"
 done
 # The vendored retro remains attributable and explicit-only after rendering.
 [ -s skills/retro/LICENSE ] || fail "retro is missing its upstream license"
@@ -82,7 +88,7 @@ explicit_model_skills=$(
     done | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'
 )
 [ "$explicit_model_skills" = \
-    "build collab improve-codebase-architecture maintain retro zero-tech-debt" ] \
+    "improve-codebase-architecture maintain retro zero-tech-debt" ] \
     || fail "explicit-only skill policy drifted: $explicit_model_skills"
 
 [ -x scripts/render ] || fail "the renderer is not executable"
@@ -94,7 +100,7 @@ grep -F '/render' scripts/post-sync >/dev/null \
     || fail "the repository guidance entrypoint is missing or empty: AGENTS.md"
 
 # Public-repo hygiene: nothing here may assume an account name.
-if grep -rn '/Users/' skills fragments prompts scripts README.md AGENTS.md CONTEXT.md 2>/dev/null; then
+if grep -rn '/Users/' skills fragments prompts scripts README.md AGENTS.md GLOSSARY.md 2>/dev/null; then
     fail "a literal /Users/ path assumes an account name; resolve from \$HOME instead"
 fi
 
@@ -125,17 +131,17 @@ printf '<!-- Rendered from %s/skills/stale-validate/SKILL.md — do not edit; ch
 HOME="$render_home" AGENTGUIDANCE_SKILLS_ROOT="$rendered_skills" scripts/render >/dev/null \
     || fail "the render failed against a fixture HOME"
 
-rendered="$rendered_skills/collab/SKILL.md"
-[ -f "$rendered" ] || fail "the render did not install collab"
-grep -F "Rendered from $root/skills/collab/SKILL.md" "$rendered" >/dev/null \
+rendered="$rendered_skills/maintain/SKILL.md"
+[ -f "$rendered" ] || fail "the render did not install maintain"
+grep -F "Rendered from $root/skills/maintain/SKILL.md" "$rendered" >/dev/null \
     || fail "the rendered skill is missing its provenance banner"
 if grep -E '<!-- (fragment|extension-prompt):' "$rendered" >/dev/null; then
     fail "the rendered skill still contains raw render points"
 fi
-grep -F 'validate-extension-splice' "$rendered_skills/collab/references/building-and-delivery.md" >/dev/null \
+grep -F 'validate-extension-splice' "$rendered_skills/maintain/references/fork-maintenance.md" >/dev/null \
     || fail "the render did not splice a present extension prompt"
 [ ! -w "$rendered" ] || fail "the rendered skill is not read-only"
-[ -f "$rendered_skills/collab/agents/openai.yaml" ] \
+[ -f "$rendered_skills/maintain/agents/openai.yaml" ] \
     || fail "the render did not ship the skill's sibling files"
 [ ! -e "$rendered_skills/stale-validate" ] \
     || fail "the render did not prune a stale generated skill"
@@ -162,38 +168,15 @@ if grep -F 'Silence is appropriate' "$rendered_maintain" >/dev/null; then
     fail "the rendered maintain skill still permits a silent closeout"
 fi
 
-# Operator publication guidance must survive the shared render into every
-# skill that consumes GUIDELINES.md; those skills are shipped to Codex and
-# Claude from the same fixed resource set.
-for guided_skill in build collab maintain; do
-    case "$guided_skill" in
-        maintain) reference=fork-maintenance.md ;;
-        *) reference=building-and-delivery.md ;;
-    esac
-    rendered_guided_skill="$rendered_skills/$guided_skill/references/$reference"
-    grep -F 'gh gist create FILE --desc "…" --web' "$rendered_guided_skill" >/dev/null \
-        || fail "the rendered $guided_skill skill omits Gist create-and-open guidance"
-    grep -F 'gh gist view GIST_ID --web' "$rendered_guided_skill" >/dev/null \
-        || fail "the rendered $guided_skill skill omits existing-Gist open guidance"
-done
-
-# Shared-checkout safety is build doctrine, not a harness-specific warning.
-# It must render identically into both human-loop and unattended workers.
-for worker in collab build; do
-    rendered_worker="$rendered_skills/$worker/references/building-and-delivery.md"
-    grep -F 'Shared checkouts are concurrent state.' "$rendered_worker" >/dev/null \
-        || fail "the rendered $worker skill is missing shared-checkout safety"
-    grep -F 'git reset --hard' "$rendered_worker" >/dev/null \
-        || fail "the rendered $worker skill omits named discard commands"
-    grep -F 'git apply -R --check' "$rendered_worker" >/dev/null \
-        || fail "the rendered $worker skill omits the read-only reverse probe"
-done
+# The remaining extension consumer keeps operator publication guidance.
+grep -F 'gh gist create FILE --desc "…" --web' "$rendered_maintain" >/dev/null \
+    || fail "the rendered maintain skill omits Gist create-and-open guidance"
+grep -F 'gh gist view GIST_ID --web' "$rendered_maintain" >/dev/null \
+    || fail "the rendered maintain skill omits existing-Gist open guidance"
 
 # Progressive references are rendered products too: shared fragments and
 # extension prompts must resolve, ship read-only, and retain their provenance.
 for reference in \
-    collab/references/building-and-delivery.md \
-    build/references/building-and-delivery.md \
     maintain/references/fork-maintenance.md \
     maintain/references/merge-only-maintenance.md \
     improve-codebase-architecture/HTML-REPORT.md
@@ -215,7 +198,7 @@ mkdir -p "$fixture_source/scripts"
 cp scripts/render "$fixture_source/scripts/render"
 cp -R skills fragments "$fixture_source/"
 printf '\n<!-- fragment: missing-reference-fixture.md -->\n' \
-    >>"$fixture_source/skills/collab/references/building-and-delivery.md"
+    >>"$fixture_source/skills/maintain/references/fork-maintenance.md"
 if HOME="$render_home" AGENTGUIDANCE_SKILLS_ROOT="$render_home/broken-skills" \
     "$fixture_source/scripts/render" >/dev/null 2>&1; then
     fail "a missing reference-only fragment did not fail the render"

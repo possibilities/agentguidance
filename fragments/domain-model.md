@@ -3,15 +3,19 @@ ADRs when investigating its domain. When delegating, give workers the exact
 target repository and include that reading in their assignment; their starting
 workspace may be elsewhere. Carry the resulting constraints into the work.
 
-The project's language lives in `CONTEXT.md` at the repo root: a glossary.
-Each entry has a **Term**, one or two sentences on what it means, and rejected
-synonyms under `_Avoid_`. If `CONTEXT-MAP.md` exists, terms go in the per-context
-glossary it points to. Keep plans, progress reports, and conversation history
-in working notes. Use canonical terms in sketches, assignments, code, names,
-and summaries; update the glossary when a term is resolved.
+The project's domain language lives in `GLOSSARY.md` at the repo root. Define
+each project-specific concept briefly, with rejected synonyms under `_Avoid_`.
+Keep implementation choices, plans, progress, and conversation history in
+their appropriate documents, not the glossary. If `GLOSSARY-MAP.md` exists,
+read it to find the glossary for the context in question and the relationships
+between contexts. Use canonical terms in sketches, assignments, code, names,
+and summaries. When two meanings compete, test them against concrete edge
+cases and the code; resolve the term and update the glossary while the
+decision is fresh.
 
-Important decisions whose rationale or tradeoffs a future maintainer would
-otherwise need to rediscover get a concise ADR in `docs/adr/NNNN-slug.md`.
+Offer a concise ADR in `docs/adr/NNNN-slug.md` for a meaningful tradeoff whose
+choice is costly to reverse and would surprise a future maintainer without its
+reasoning. Do not record ordinary reversible choices as ceremony.
 Explain the choice, reason, and material consequences, following the repo's
 own ADR convention. Use enough detail to make the decision understandable,
 linking supporting material when useful. A reversible decision can still

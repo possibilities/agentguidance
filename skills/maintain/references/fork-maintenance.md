@@ -130,7 +130,7 @@ audit, exact-candidate gate, ownership, and reporting requirements still apply.
 
 ## Establish the state
 
-1. Read the workshop's `AGENTS.md`, `CONTEXT.md`, `MAINTAIN.md`, and
+1. Read the workshop's `AGENTS.md`, `GLOSSARY.md`, `MAINTAIN.md`, and
    `SCRATCHPAD.md`. Read the bound checkout's own `AGENTS.md` completely
    before touching the project.
 2. Confirm the workshop is clean on its main branch. Confirm the bound

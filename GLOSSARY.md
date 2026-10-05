@@ -1,4 +1,6 @@
-# Context
+# AgentGuidance glossary
+
+Terms for this repository's authored guidance and installed resources.
 
 **Extension prompt** — a Markdown file with a recognized name under
 `~/.config/agentguidance/` that `scripts/render` splices into a skill template

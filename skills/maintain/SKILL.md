@@ -7,7 +7,7 @@ disable-model-invocation: true
 # Maintain a fork
 
 With no arguments, use the current repository as the workshop and read its
-`AGENTS.md`, `CONTEXT.md`, `MAINTAIN.md`, and `SCRATCHPAD.md`. The human does
+`AGENTS.md`, `GLOSSARY.md`, `MAINTAIN.md`, and `SCRATCHPAD.md`. The human does
 not need to repeat its name, branch model, or exceptions in the invocation.
 An explicitly named workshop changes the target, not the procedure.
 

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Build"
-  short_description: "Carry a brief through verified, authorized delivery"
-  default_prompt: "Use $build with this brief."
