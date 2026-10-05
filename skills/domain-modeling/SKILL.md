@@ -48,11 +48,17 @@ Create files lazily: only when you have something to write. If no `GLOSSARY.md` 
 
 ### Challenge against the glossary
 
-When the user uses a term that conflicts with the existing language in `GLOSSARY.md`, call it out immediately. "Your glossary defines 'cancellation' as X, but you seem to mean Y. Which is it?"
+When a term appears to conflict with `GLOSSARY.md`, check the relevant code and
+test the competing meanings against a concrete scenario. Resolve a naming-only
+gap from that evidence when possible. Surface the conflict and ask only if the
+meanings imply materially different behavior that the task cannot resolve.
 
 ### Sharpen fuzzy language
 
-When the user uses vague or overloaded terms, propose a precise canonical term. "You're saying 'account': do you mean the Customer or the User? Those are different things."
+When the user uses vague or overloaded terms, use project context to propose a
+precise canonical term. For example, explain whether an "account" in this
+scenario is a Customer or a User, and ask only if that distinction changes the
+requested behavior and remains unresolved.
 
 ### Discuss concrete scenarios
 
@@ -60,7 +66,9 @@ When domain relationships are being discussed, stress-test them with specific sc
 
 ### Cross-reference with code
 
-When the user states how something works, check whether the code agrees. If you find a contradiction, surface it: "Your code cancels entire Orders, but you just said partial cancellation is possible. Which is right?"
+When the user states how something works, check whether the code agrees. If you
+find a contradiction, cite the concrete behavior and resolve it within the
+task's scope. Ask when the intended behavior remains materially ambiguous.
 
 ### Update GLOSSARY.md inline
 

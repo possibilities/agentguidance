@@ -65,11 +65,12 @@ Google MCP and CLI and has no fleet tool checkout to own its workflow.
 A runbook for a fleet tool belongs in that tool's checkout. All resource skills are discovered through their names
 and descriptions.
 
-`domain-modeling` and `writing-for-agents` are selected MIT-licensed skills
-adapted from Matt Pocock's v1.3 release. Keep their source pins and notices
-with each skill. The first supports active glossary and ADR work; the second
-supports writing guidance. Everyday glossary reading remains in the default
-role. Do not import the whole upstream catalog as a competing workflow.
+`domain-modeling`, `writing-for-agents`, `diagnosing-bugs`, `prototype`, and
+`code-review` are selected MIT-licensed skills adapted from Matt Pocock's v1.3
+release. Keep their source pins and notices with each skill. They support
+active model work, agent-facing writing, hard bug diagnosis, disposable design
+probes, and two-axis code review. Everyday glossary reading remains in the
+default role. Do not import the whole upstream catalog as a competing workflow.
 
 `AGENTS.md` is the sole repository guidance entrypoint.
 Run `tests/validate.sh` before committing.

@@ -38,7 +38,7 @@ fi
 
 # Every skill ships whole: template, manifest for the agents that read one,
 # and the openai.yaml interface card the fleet convention requires.
-for skill in domain-modeling email improve-codebase-architecture maintain notify retro writing-for-agents zero-tech-debt; do
+for skill in code-review diagnosing-bugs domain-modeling email improve-codebase-architecture maintain notify prototype retro writing-for-agents zero-tech-debt; do
     [ -f "skills/$skill/SKILL.md" ] \
         || fail "skill template is missing: skills/$skill/SKILL.md"
     [ -f "skills/$skill/agents/openai.yaml" ] \
@@ -46,7 +46,7 @@ for skill in domain-modeling email improve-codebase-architecture maintain notify
 done
 # Complete upstream skills retain their attribution and license in the copied
 # resource tree as well as in this source checkout.
-for skill in domain-modeling writing-for-agents; do
+for skill in code-review diagnosing-bugs domain-modeling prototype writing-for-agents; do
     if [ ! -s "skills/$skill/LICENSE" ] || [ ! -s "skills/$skill/UPSTREAM.md" ]; then
         fail "$skill is missing its source attribution or license"
     fi
