@@ -1,6 +1,7 @@
 Read the repository's applicable `AGENTS.md`, existing glossary, and relevant
-ADRs when investigating its domain. When delegating, give workers the exact
-target repository and include that reading in their assignment; their starting
+ADRs, including those in the applicable context's `docs/adr/`, when
+investigating its domain. When delegating, give workers the exact target
+repository and include that reading in their assignment; their starting
 workspace may be elsewhere. Carry the resulting constraints into the work.
 
 The project's domain language lives in `GLOSSARY.md` at the repo root. Define
@@ -26,8 +27,9 @@ branch before assigning it, do not reuse a retired number for another choice,
 and cite complete relative file links. Keep a useful decision index in step
 with status changes without copying the rationale into it.
 
-When code and documentation disagree, identify the concrete evidence and
-resolve the discrepancy within the task's scope. During parallel work, assign
+Surface proposed changes that conflict with an existing ADR. When code and
+documentation disagree, identify the concrete evidence and resolve the
+discrepancy within the task's scope. During parallel work, assign
 ownership of shared glossary and ADR edits. Workers report needed updates;
 the coordinator ensures they are integrated with the result.
 
